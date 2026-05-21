@@ -25,8 +25,10 @@ export function useChat() {
       setSession(data);
       setMessages(data.messages || []);
       scrollToBottom();
+      return data;
     } catch (e: any) {
       setError(e.message);
+      return null;
     } finally {
       setIsLoading(false);
     }
@@ -39,8 +41,10 @@ export function useChat() {
       setSession(data);
       setMessages(data.messages || []);
       scrollToBottom();
+      return data;
     } catch (e: any) {
       setError(e.message);
+      return null;
     } finally {
       setIsLoading(false);
     }

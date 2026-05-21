@@ -70,6 +70,15 @@ export function usePDF() {
     return data.results;
   }, []);
 
+  const syncDocuments = useCallback((nextDocuments: DocumentMetadata[]) => {
+    setDocuments(nextDocuments);
+    setActiveDoc(nextDocuments[0] || null);
+    setPages([]);
+    setActivePage(1);
+    setClips([]);
+    setSearchResults([]);
+  }, []);
+
   return {
     documents,
     activeDoc,
@@ -86,5 +95,6 @@ export function usePDF() {
     loadThumbnail,
     clipRegion,
     searchInDoc,
+    syncDocuments,
   };
 }

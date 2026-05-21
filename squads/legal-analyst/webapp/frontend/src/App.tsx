@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Header from "./components/Header";
 import Sidebar from "./components/Sidebar";
 import ChatInterface from "./components/ChatInterface";
@@ -11,6 +11,8 @@ import { useAgents } from "./hooks/useAgents";
 import { usePDF } from "./hooks/usePDF";
 import * as api from "./services/api";
 import type { PanelView, SessionSummary } from "./types";
+
+const LAST_SESSION_KEY = "legal-analyst:last-session-id";
 
 export default function App() {
   const [activeView, setActiveView] = useState<PanelView>("chat");
@@ -26,11 +28,37 @@ export default function App() {
   const chat = useChat();
   const agents = useAgents();
   const pdf = usePDF();
+  const didBootstrap = useRef(false);
 
   useEffect(() => {
     if (showVSL) return;
-    chat.initSession("Nova Analise Juridica");
-    api.listSessions().then(setSessions).catch(() => {});
+    if (didBootstrap.current) return;
+    didBootstrap.current = true;
+
+    async function bootstrapSession() {
+      const savedSessionId = window.localStorage.getItem(LAST_SESSION_KEY);
+
+      if (savedSessionId) {
+        const session = await chat.loadSession(savedSessionId);
+        if (session?.session_id) {
+          pdf.syncDocuments(session.documents || []);
+          const updated = await api.listSessions().catch(() => []);
+          setSessions(updated);
+          return;
+        }
+        window.localStorage.removeItem(LAST_SESSION_KEY);
+      }
+
+      const session = await chat.initSession("Nova Analise Juridica");
+      if (session?.session_id) {
+        window.localStorage.setItem(LAST_SESSION_KEY, session.session_id);
+        pdf.syncDocuments(session.documents || []);
+      }
+      const updated = await api.listSessions().catch(() => []);
+      setSessions(updated);
+    }
+
+    bootstrapSession();
   }, [showVSL]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAccessApp = useCallback(() => {
@@ -39,16 +67,22 @@ export default function App() {
   }, []);
 
   const handleNewSession = useCallback(async () => {
-    await chat.initSession("Nova Analise");
+    const session = await chat.initSession("Nova Analise");
+    if (session?.session_id) {
+      window.localStorage.setItem(LAST_SESSION_KEY, session.session_id);
+    }
+    pdf.syncDocuments(session?.documents || []);
     const updated = await api.listSessions().catch(() => []);
     setSessions(updated);
-  }, [chat]);
+  }, [chat, pdf]);
 
   const handleLoadSession = useCallback(
     async (sessionId: string) => {
-      await chat.loadSession(sessionId);
+      const session = await chat.loadSession(sessionId);
+      window.localStorage.setItem(LAST_SESSION_KEY, sessionId);
+      pdf.syncDocuments(session?.documents || []);
     },
-    [chat],
+    [chat, pdf],
   );
 
   const handleUploadPDF = useCallback(
