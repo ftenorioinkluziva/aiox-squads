@@ -35,6 +35,7 @@ export default function MessageBubble({ message, onReferenceClick }: MessageBubb
   const agentColor = message.agent_id
     ? AGENT_COLORS[message.agent_id] || "from-gray-500 to-gray-700"
     : "";
+  const phase = message.metadata?.phase;
 
   return (
     <motion.div
@@ -72,9 +73,9 @@ export default function MessageBubble({ message, onReferenceClick }: MessageBubb
             <span className="text-xs font-semibold text-brand-300">
               {message.agent_name}
             </span>
-            {message.metadata?.phase && (
+            {phase != null && (
               <span className="badge-gray text-[10px]">
-                {String(message.metadata.phase)}
+                {String(phase)}
               </span>
             )}
           </div>

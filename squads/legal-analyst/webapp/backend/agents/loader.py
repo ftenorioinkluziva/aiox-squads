@@ -6,8 +6,8 @@ from pathlib import Path
 
 import yaml
 
-from ..core.config import AGENTS_DIR, DATA_DIR, WORKFLOWS_DIR
-from ..core.models import AgentInfo, AgentTier
+from core.config import AGENTS_DIR, DATA_DIR, WORKFLOWS_DIR
+from core.models import AgentInfo, AgentTier
 
 
 _TIER_MAP = {

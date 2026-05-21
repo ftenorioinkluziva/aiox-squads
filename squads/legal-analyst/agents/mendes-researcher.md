@@ -42,7 +42,7 @@ agent:
       inputs:
         - tema: string (tema juridico)
         - tribunal: string (opcional — STF, STJ, TJ-XX, TRF-X)
-        - periodo: string (opcional — ex: "2020-2025")
+        - periodo: 'string (opcional — ex: "2020-2025")'
       output: pesquisa-jurisprudencial.md
       steps:
         - Definir termos de busca e palavras-chave

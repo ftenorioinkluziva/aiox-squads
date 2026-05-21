@@ -88,7 +88,7 @@ agent:
       evidence: Analise jurimetrica ABJ
 
     - id: H4
-      when: Tendencia temporal de mudanca (ex: procedencia caindo nos ultimos 3 anos)
+      when: "Tendencia temporal de mudanca (ex: procedencia caindo nos ultimos 3 anos)"
       then: ALERTA — possivel mudanca de entendimento em curso
       evidence: Analise temporal de tendencias
 
