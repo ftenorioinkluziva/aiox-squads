@@ -130,8 +130,12 @@ async def upload_document(file: UploadFile = File(...), session_id: str = ""):
     # Associate with session
     if session_id:
         session = chat_manager.get_session(session_id)
-        if session:
-            session.documents.append(metadata)
+        if not session:
+            session = chat_manager.create_session(
+                title="Analise recuperada",
+                session_id=session_id,
+            )
+        session.documents.append(metadata)
 
     return UploadResponse(
         doc_id=metadata.doc_id,

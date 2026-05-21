@@ -344,6 +344,30 @@ Apos o upload, executarei automaticamente:
 
 Voce tambem pode adicionar **consideracoes** sobre o caso no painel lateral."""
 
+    docs_requiring_ocr = [doc for doc in session.documents if getattr(doc, "ocr_required", False)]
+    if docs_requiring_ocr:
+        warnings = []
+        for doc in docs_requiring_ocr:
+            doc_warnings = getattr(doc, "extraction_warnings", []) or []
+            warnings.extend(doc_warnings)
+        warning_text = "\n".join(f"- {warning}" for warning in warnings[:4])
+        return f"""**Documento recebido, mas a leitura automatica ainda esta incompleta.**
+
+{doc_context}
+
+**O que aconteceu**
+{warning_text or '- O documento parece escaneado e precisa de OCR.'}
+
+**Proximo passo tecnico:** aplicar OCR nas paginas marcadas antes da triagem juridica completa.
+
+Enquanto isso, voce pode informar em linguagem simples o que deseja fazer com o caso, por exemplo:
+- entender do que se trata;
+- avaliar risco;
+- preparar defesa ou contestacao;
+- gerar resumo para advogado.
+
+O que voce quer descobrir primeiro sobre este processo?"""
+
     return f"""**Processo recebido e processado com sucesso.**
 
 {doc_context}

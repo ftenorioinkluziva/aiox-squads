@@ -23,8 +23,10 @@ class ChatManager:
     def __init__(self) -> None:
         self._sessions: dict[str, ChatSession] = {}
 
-    def create_session(self, title: str = "Nova Analise") -> ChatSession:
+    def create_session(self, title: str = "Nova Analise", session_id: str | None = None) -> ChatSession:
         session = ChatSession(title=title)
+        if session_id:
+            session.session_id = session_id
         session.messages.append(ChatMessage(
             role=MessageRole.SYSTEM,
             content=self._system_prompt(),
