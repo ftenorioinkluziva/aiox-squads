@@ -54,6 +54,11 @@ class DocumentPage(BaseModel):
     text: str
     images: list[str] = Field(default_factory=list)
     word_count: int = 0
+    text_length: int = 0
+    image_count: int = 0
+    extraction_method: str = "text"
+    extraction_status: str = "extracted"
+    needs_ocr: bool = False
 
 
 class DocumentMetadata(BaseModel):
@@ -67,6 +72,11 @@ class DocumentMetadata(BaseModel):
     process_number: str = ""
     court: str = ""
     subject: str = ""
+    text_page_count: int = 0
+    scanned_page_count: int = 0
+    ocr_required: bool = False
+    extraction_status: str = "extracted"
+    extraction_warnings: list[str] = Field(default_factory=list)
 
 
 class DocumentClip(BaseModel):

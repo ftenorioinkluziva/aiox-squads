@@ -11,6 +11,7 @@ import {
   ZoomOut,
   X,
   Loader2,
+  AlertCircle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { DocumentClip, DocumentMetadata, DocumentPage } from "../types";
@@ -213,6 +214,9 @@ export default function PDFViewer({
 
             {/* Doc metadata */}
             <div className="ml-auto flex items-center gap-2 text-[10px] text-gray-600">
+              {activeDoc.ocr_required && (
+                <span className="badge-gold">OCR pendente</span>
+              )}
               {activeDoc.process_number && (
                 <span className="badge-gold">{activeDoc.process_number}</span>
               )}
@@ -221,6 +225,22 @@ export default function PDFViewer({
               )}
             </div>
           </div>
+
+          {activeDoc.extraction_warnings.length > 0 && (
+            <div className="border-b border-amber-500/20 bg-amber-500/10 px-3 py-2">
+              <div className="flex items-start gap-2 text-xs text-amber-100/80">
+                <AlertCircle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-medium text-amber-100">
+                    Extração parcial do documento
+                  </div>
+                  <div className="mt-1">
+                    {activeDoc.extraction_warnings[0]}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Search bar */}
           <AnimatePresence>
@@ -350,6 +370,11 @@ export default function PDFViewer({
                     <span className="text-xs text-gray-500">
                       Fl. {pageContent.page_number} | {pageContent.word_count} palavras
                     </span>
+                    {pageContent.needs_ocr && (
+                      <span className="badge-gold text-[10px]">
+                        pagina escaneada
+                      </span>
+                    )}
                     <div className="flex gap-1">
                       <button
                         onClick={() => {
@@ -367,7 +392,7 @@ export default function PDFViewer({
                   <div className="bg-white/[0.02] rounded-xl p-6 border border-white/5 font-serif text-sm text-gray-300 leading-relaxed whitespace-pre-wrap select-text">
                     {pageContent.text || (
                       <span className="italic text-gray-600">
-                        Pagina sem texto extraido (pode conter apenas imagens)
+                        Pagina sem texto extraido. Ela provavelmente precisa de OCR para ser analisada.
                       </span>
                     )}
                   </div>

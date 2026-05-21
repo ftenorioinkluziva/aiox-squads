@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import MessageBubble from "./MessageBubble";
-import type { ChatMessage, DocumentReference } from "../types";
+import type { ChatMessage, DocumentMetadata, DocumentReference } from "../types";
 
 interface ChatInterfaceProps {
   messages: ChatMessage[];
@@ -30,6 +30,7 @@ interface ChatInterfaceProps {
   onDismissError: () => void;
   onReferenceClick?: (docId: string, page?: number) => void;
   documentCount: number;
+  documents: DocumentMetadata[];
 }
 
 export default function ChatInterface({
@@ -42,6 +43,7 @@ export default function ChatInterface({
   onDismissError,
   onReferenceClick,
   documentCount,
+  documents,
 }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
   const [considerations, setConsiderations] = useState("");
@@ -104,6 +106,9 @@ export default function ChatInterface({
   const filteredCommands = input.startsWith("*")
     ? commands.filter((c) => c.cmd.includes(input.toLowerCase()))
     : commands;
+  const documentsWithWarnings = documents.filter(
+    (doc) => doc.ocr_required || doc.extraction_warnings.length > 0,
+  );
 
   return (
     <div className="flex-1 flex flex-col h-full">
@@ -146,6 +151,31 @@ export default function ChatInterface({
           </motion.div>
         )}
       </div>
+
+      {/* Extraction status banner */}
+      <AnimatePresence>
+        {documentsWithWarnings.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mx-4 mb-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20"
+          >
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <div className="text-xs text-amber-200 font-medium">
+                  Documento precisa de leitura complementar
+                </div>
+                <div className="text-xs text-amber-100/70 mt-1">
+                  {documentsWithWarnings[0].extraction_warnings[0] ||
+                    "Algumas paginas parecem escaneadas e precisam de OCR antes da analise completa."}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Error banner */}
       <AnimatePresence>

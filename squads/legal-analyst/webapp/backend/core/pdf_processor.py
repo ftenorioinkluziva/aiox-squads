@@ -17,10 +17,12 @@ def extract_pdf(filepath: Path) -> tuple[DocumentMetadata, list[DocumentPage]]:
     doc = fitz.open(str(filepath))
     pages: list[DocumentPage] = []
     all_text = ""
+    text_page_count = 0
+    scanned_page_count = 0
 
     for page_num in range(len(doc)):
         page = doc[page_num]
-        text = page.get_text("text")
+        text = page.get_text("text").strip()
         all_text += text
 
         image_paths: list[str] = []
@@ -33,12 +35,40 @@ def extract_pdf(filepath: Path) -> tuple[DocumentMetadata, list[DocumentPage]]:
                 img_path.write_bytes(base_image["image"])
                 image_paths.append(str(img_path))
 
+        text_length = len(text)
+        image_count = len(image_paths)
+        needs_ocr = text_length < 50
+        extraction_status = "ocr_required" if needs_ocr else "extracted"
+        extraction_method = "image" if needs_ocr and image_count > 0 else "ocr" if needs_ocr else "text"
+
+        if text_length >= 50:
+            text_page_count += 1
+        elif needs_ocr:
+            scanned_page_count += 1
+
         pages.append(DocumentPage(
             page_number=page_num + 1,
             text=text,
             images=image_paths,
             word_count=len(text.split()),
+            text_length=text_length,
+            image_count=image_count,
+            extraction_method=extraction_method,
+            extraction_status=extraction_status,
+            needs_ocr=needs_ocr,
         ))
+
+    extraction_warnings = _build_extraction_warnings(
+        total_pages=len(doc),
+        text_page_count=text_page_count,
+        scanned_page_count=scanned_page_count,
+        all_text=all_text,
+    )
+    extraction_status = _resolve_extraction_status(
+        total_pages=len(doc),
+        text_page_count=text_page_count,
+        scanned_page_count=scanned_page_count,
+    )
 
     metadata = DocumentMetadata(
         filename=filepath.name,
@@ -49,10 +79,53 @@ def extract_pdf(filepath: Path) -> tuple[DocumentMetadata, list[DocumentPage]]:
         extracted_parties=_extract_parties(all_text),
         court=_extract_court(all_text),
         subject=_extract_subject(all_text),
+        text_page_count=text_page_count,
+        scanned_page_count=scanned_page_count,
+        ocr_required=scanned_page_count > 0,
+        extraction_status=extraction_status,
+        extraction_warnings=extraction_warnings,
     )
 
     doc.close()
     return metadata, pages
+
+
+def _resolve_extraction_status(
+    total_pages: int,
+    text_page_count: int,
+    scanned_page_count: int,
+) -> str:
+    if total_pages == 0:
+        return "empty"
+    if text_page_count == 0 and scanned_page_count > 0:
+        return "ocr_required"
+    if scanned_page_count > 0:
+        return "partial"
+    return "extracted"
+
+
+def _build_extraction_warnings(
+    total_pages: int,
+    text_page_count: int,
+    scanned_page_count: int,
+    all_text: str,
+) -> list[str]:
+    warnings: list[str] = []
+    if scanned_page_count:
+        warnings.append(
+            f"{scanned_page_count} de {total_pages} pagina(s) parecem escaneadas e precisam de OCR."
+        )
+    if total_pages and text_page_count == 0:
+        warnings.append(
+            "Nenhum texto selecionavel foi encontrado. A analise automatica fica limitada ate o OCR ser aplicado."
+        )
+    if all_text and not _extract_process_number(all_text):
+        warnings.append("Numero do processo nao identificado automaticamente.")
+    if all_text and not _extract_court(all_text):
+        warnings.append("Tribunal ou vara nao identificado automaticamente.")
+    if all_text and not _extract_parties(all_text):
+        warnings.append("Partes nao identificadas automaticamente.")
+    return warnings
 
 
 def clip_region(

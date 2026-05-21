@@ -4,3 +4,12 @@ __pycache__/
 .env
 *.env.local
 .mcp.json
+
+# Local development artifacts
+.venv/
+node_modules/
+dist/
+uploads/
+clips/
+tsconfig.tsbuildinfo
+package-lock.json

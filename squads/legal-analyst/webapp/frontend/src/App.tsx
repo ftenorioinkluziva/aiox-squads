@@ -177,6 +177,7 @@ export default function App() {
               onDismissError={() => chat.setError(null)}
               onReferenceClick={handleReferenceClick}
               documentCount={pdf.documents.length}
+              documents={pdf.documents}
             />
           )}
 

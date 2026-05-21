@@ -9,6 +9,11 @@ export interface DocumentMetadata {
   process_number: string;
   court: string;
   subject: string;
+  text_page_count: number;
+  scanned_page_count: number;
+  ocr_required: boolean;
+  extraction_status: "extracted" | "partial" | "ocr_required" | "empty";
+  extraction_warnings: string[];
 }
 
 export interface DocumentPage {
@@ -16,6 +21,11 @@ export interface DocumentPage {
   text: string;
   images: string[];
   word_count: number;
+  text_length: number;
+  image_count: number;
+  extraction_method: "text" | "image" | "ocr" | "vision_llm";
+  extraction_status: "extracted" | "ocr_required" | "failed";
+  needs_ocr: boolean;
 }
 
 export interface DocumentClip {
