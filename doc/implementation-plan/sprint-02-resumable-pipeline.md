@@ -13,6 +13,7 @@ Um run iniciado deve poder ser consultado e retomado usando apenas PostgreSQL e 
 ### Backend
 
 - Alterar montagem de contexto em `pipeline_service.py` para usar repositorios persistentes.
+- Migrar fallback OpenAI para Responses API quando o step exigir raciocinio, workflow multi-turn, tool calling ou output estruturado.
 - Substituir `mark_interrupted_runs()` por uma politica de retomada:
   - `queued`: pode ser agendado novamente;
   - `running`: se lock estiver expirado, volta para `queued` ou `failed` conforme criterio;

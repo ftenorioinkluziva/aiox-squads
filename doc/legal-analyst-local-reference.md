@@ -256,6 +256,9 @@ LLM:
 
 - Anthropic continua como provedor primario via `ANTHROPIC_API_KEY` e `ANTHROPIC_MODEL`.
 - OpenAI e fallback via `OPENAI_API_KEY` e `OPENAI_MODEL`.
+- Default recomendado para fallback: `OPENAI_MODEL=gpt-5.4-mini`.
+- O fallback atual usa Chat Completions, que ainda e compativel com `gpt-5.4-mini`.
+- Migracao futura recomendada: usar Responses API para raciocinio, workflows multi-turn, tool calling e outputs estruturados.
 - Pipeline real nao usa fallback template; se nenhum provedor real estiver configurado, o step falha.
 
 Frontend:
