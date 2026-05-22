@@ -66,6 +66,13 @@ cd C:\projetos\legal-analyst-squad\squads\legal-analyst\webapp\frontend
 npm run dev -- --host 127.0.0.1 2>&1 | Tee-Object -FilePath C:\projetos\legal-analyst-squad\.logs\frontend.log
 ```
 
+Se o backend estiver temporariamente em outra porta:
+
+```powershell
+$env:VITE_API_PROXY_TARGET="http://127.0.0.1:8001"
+npm run dev -- --host 127.0.0.1 2>&1 | Tee-Object -FilePath C:\projetos\legal-analyst-squad\.logs\frontend.log
+```
+
 URLs:
 
 ```text
