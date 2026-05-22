@@ -21,6 +21,10 @@ from .repositories import document_repository, session_repository
 RUN_ACTIVE_STATUSES = {"queued", "running"}
 TERMINAL_STATUSES = {"completed", "failed", "blocked"}
 
+
+class PipelineBlockedError(RuntimeError):
+    """Raised when the workflow finds a legal or document limitation, not a technical failure."""
+
 TASK_AGENT_MAP = {
     "classificar-processo": "barbosa-classifier",
     "verificar-admissibilidade": "fux-procedural",
@@ -291,6 +295,15 @@ async def _run_phase(run_id: str, phase_id: str) -> bool:
             if all(step.status == "completed" for step in phase_steps):
                 await session.commit()
                 return True
+            blocked = next((step for step in phase_steps if step.status == "blocked"), None)
+            if blocked:
+                run.status = "blocked"
+                run.error_message = blocked.error_message
+                run.completed_at = datetime.utcnow()
+                await _add_event(session, run_id, "run_blocked", blocked.error_message or "Pipeline bloqueado")
+                await session.commit()
+                return False
+
             failed = next((step for step in phase_steps if step.status == "failed"), None)
             if failed:
                 run.status = "failed"
@@ -336,11 +349,16 @@ async def _execute_step(run_id: str, step_id: str) -> None:
         )
         await session.commit()
 
+    blocked = False
     try:
         output = await _call_step_llm(run_id, step_id)
     except LLMConfigurationError as exc:
         output = None
         error = str(exc)
+    except PipelineBlockedError as exc:
+        output = None
+        error = str(exc)
+        blocked = True
     except Exception as exc:
         output = None
         error = f"Falha tecnica no step {step_id}: {exc}"
@@ -353,9 +371,15 @@ async def _execute_step(run_id: str, step_id: str) -> None:
         if not step:
             return
         if error:
-            step.status = "failed"
+            step.status = "blocked" if blocked else "failed"
             step.error_message = error
-            await _add_event(session, run_id, "step_failed", error, {"step_id": step.id, "task_id": step.task_id})
+            await _add_event(
+                session,
+                run_id,
+                "step_blocked" if blocked else "step_failed",
+                error,
+                {"step_id": step.id, "task_id": step.task_id},
+            )
         else:
             step.status = "completed"
             step.output_text = output
@@ -403,7 +427,7 @@ Entregue uma resposta objetiva, estruturada em Markdown, com conclusoes, ressalv
     )
     result = await generate_text(system_prompt=system_prompt, messages=[{"role": "user", "content": user_prompt}])
     if result.text.strip().upper().startswith("BLOQUEIO:"):
-        raise ValueError(result.text.strip())
+        raise PipelineBlockedError(result.text.strip().removeprefix("BLOQUEIO:").strip())
     return result.text
 
 
