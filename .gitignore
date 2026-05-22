@@ -11,5 +11,6 @@ node_modules/
 dist/
 uploads/
 clips/
+.logs/
 tsconfig.tsbuildinfo
 package-lock.json

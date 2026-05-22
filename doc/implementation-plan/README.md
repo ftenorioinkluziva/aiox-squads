@@ -38,6 +38,7 @@ Ainda pendente:
 - `epics.md`: epicos, objetivos, escopo e criterios de aceite.
 - `dependencies.md`: ordem tecnica, dependencias e decisoes de arquitetura.
 - `sprint-01-session-document-persistence.md`: persistencia de sessoes, mensagens e documentos.
+- `sprint-01-test-roteiro.md`: roteiro manual/API para validar a Sprint 01.
 - `sprint-02-resumable-pipeline.md`: retomada real do pipeline e execucao DB-backed.
 - `sprint-03-ocr-and-quality.md`: OCR, outputs estruturados e qualidade juridica.
 
