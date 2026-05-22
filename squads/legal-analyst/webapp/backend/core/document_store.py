@@ -12,7 +12,7 @@ from .models import (
     DocumentReference,
     DocumentRefType,
 )
-from .pdf_processor import clip_region, extract_pdf, get_page_thumbnail, search_in_document
+from .pdf_processor import clip_region, extract_pdf, get_page_thumbnail
 
 
 class DocumentStore:
@@ -76,10 +76,27 @@ class DocumentStore:
         return list(self._clips.values())
 
     def search(self, doc_id: str, query: str) -> list[dict]:
-        filepath = self._filepaths.get(doc_id)
-        if not filepath:
+        pages = self._pages.get(doc_id, [])
+        if not pages:
             return []
-        return search_in_document(filepath, query)
+
+        results: list[dict] = []
+        query_lower = query.lower()
+        for page in pages:
+            text = page.text or ""
+            match_at = text.lower().find(query_lower)
+            if match_at < 0:
+                continue
+
+            start = max(0, match_at - 100)
+            end = min(len(text), match_at + len(query) + 200)
+            results.append({
+                "page": page.page_number,
+                "rect": [],
+                "context": text[start:end].strip(),
+                "source": page.extraction_method,
+            })
+        return results
 
     def resolve_reference(self, ref: DocumentReference) -> dict[str, Any]:
         """Resolve a document reference to its content."""

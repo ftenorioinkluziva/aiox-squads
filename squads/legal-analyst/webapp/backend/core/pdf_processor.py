@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import re
 import uuid
 from pathlib import Path
@@ -10,6 +11,10 @@ import fitz  # PyMuPDF
 
 from .config import CLIPS_DIR, UPLOAD_DIR
 from .models import DocumentClip, DocumentMetadata, DocumentPage, DocumentRefType
+
+
+_OCR_ENGINE = None
+_OCR_ENGINE_FAILED = False
 
 
 def extract_pdf(filepath: Path) -> tuple[DocumentMetadata, list[DocumentPage]]:
@@ -23,7 +28,7 @@ def extract_pdf(filepath: Path) -> tuple[DocumentMetadata, list[DocumentPage]]:
     for page_num in range(len(doc)):
         page = doc[page_num]
         text = page.get_text("text").strip()
-        all_text += text
+        extraction_method = "text"
 
         image_paths: list[str] = []
         for img_idx, img in enumerate(page.get_images(full=True)):
@@ -37,9 +42,19 @@ def extract_pdf(filepath: Path) -> tuple[DocumentMetadata, list[DocumentPage]]:
 
         text_length = len(text)
         image_count = len(image_paths)
+        if text_length < 50:
+            ocr_text = _ocr_page(page)
+            if len(ocr_text) > text_length:
+                text = ocr_text
+                text_length = len(text)
+                extraction_method = "ocr"
+
+        all_text += text
+
         needs_ocr = text_length < 50
         extraction_status = "ocr_required" if needs_ocr else "extracted"
-        extraction_method = "image" if needs_ocr and image_count > 0 else "ocr" if needs_ocr else "text"
+        if needs_ocr:
+            extraction_method = "image" if image_count > 0 else "ocr_unavailable"
 
         if text_length >= 50:
             text_page_count += 1
@@ -102,6 +117,57 @@ def _resolve_extraction_status(
     if scanned_page_count > 0:
         return "partial"
     return "extracted"
+
+
+def _ocr_page(page: fitz.Page) -> str:
+    """Run OCR on a PDF page when an optional OCR engine is available."""
+    ocr_engine = _get_ocr_engine()
+    if not ocr_engine:
+        return ""
+
+    try:
+        pix = page.get_pixmap(dpi=220, alpha=False)
+        image = _pixmap_to_image_array(pix)
+        result, _elapsed = ocr_engine(image)
+    except Exception:
+        return ""
+
+    if not result:
+        return ""
+
+    lines: list[str] = []
+    for item in result:
+        if len(item) < 2:
+            continue
+        text = str(item[1]).strip()
+        if text:
+            lines.append(text)
+    return "\n".join(lines).strip()
+
+
+def _get_ocr_engine():
+    """Load RapidOCR lazily so the app still works when OCR deps are absent."""
+    global _OCR_ENGINE, _OCR_ENGINE_FAILED
+    if _OCR_ENGINE or _OCR_ENGINE_FAILED:
+        return _OCR_ENGINE
+
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+
+        _OCR_ENGINE = RapidOCR()
+    except Exception:
+        _OCR_ENGINE_FAILED = True
+        return None
+
+    return _OCR_ENGINE
+
+
+def _pixmap_to_image_array(pix: fitz.Pixmap):
+    from PIL import Image
+    import numpy as np
+
+    image = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+    return np.array(image)
 
 
 def _build_extraction_warnings(

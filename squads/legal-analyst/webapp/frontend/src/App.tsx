@@ -37,6 +37,8 @@ export default function App() {
 
     async function bootstrapSession() {
       const savedSessionId = window.localStorage.getItem(LAST_SESSION_KEY);
+      const updated = await api.listSessions().catch(() => []);
+      setSessions(updated);
 
       if (savedSessionId) {
         const session = await chat.loadSession(savedSessionId);
@@ -48,14 +50,6 @@ export default function App() {
         }
         window.localStorage.removeItem(LAST_SESSION_KEY);
       }
-
-      const session = await chat.initSession("Nova Analise Juridica");
-      if (session?.session_id) {
-        window.localStorage.setItem(LAST_SESSION_KEY, session.session_id);
-        pdf.syncDocuments(session.documents || []);
-      }
-      const updated = await api.listSessions().catch(() => []);
-      setSessions(updated);
     }
 
     bootstrapSession();
@@ -79,8 +73,41 @@ export default function App() {
   const handleLoadSession = useCallback(
     async (sessionId: string) => {
       const session = await chat.loadSession(sessionId);
-      window.localStorage.setItem(LAST_SESSION_KEY, sessionId);
+      if (!session?.session_id) return;
+      window.localStorage.setItem(LAST_SESSION_KEY, session.session_id);
       pdf.syncDocuments(session?.documents || []);
+    },
+    [chat, pdf],
+  );
+
+  const handleDeleteSession = useCallback(
+    async (sessionId: string) => {
+      const confirmed = window.confirm("Excluir esta sessao?");
+      if (!confirmed) return;
+
+      try {
+        await api.deleteSession(sessionId);
+        const updated = await api.listSessions().catch(() => []);
+        setSessions(updated);
+
+        if (chat.session?.session_id !== sessionId) return;
+
+        const nextSession = updated[0];
+        if (nextSession) {
+          const loaded = await chat.loadSession(nextSession.session_id);
+          if (loaded?.session_id) {
+            window.localStorage.setItem(LAST_SESSION_KEY, loaded.session_id);
+            pdf.syncDocuments(loaded.documents || []);
+          }
+          return;
+        }
+
+        chat.clearSession();
+        window.localStorage.removeItem(LAST_SESSION_KEY);
+        pdf.syncDocuments([]);
+      } catch (e: any) {
+        chat.setError(e.message || "Erro ao excluir sessao");
+      }
     },
     [chat, pdf],
   );
@@ -192,6 +219,7 @@ export default function App() {
           sessions={sessions}
           onNewSession={handleNewSession}
           onLoadSession={handleLoadSession}
+          onDeleteSession={handleDeleteSession}
           activeSessionId={chat.session?.session_id}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}

@@ -88,6 +88,14 @@ async def get_session(session_id: str):
     return session.model_dump()
 
 
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: str):
+    deleted = chat_manager.delete_session(session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Sessao nao encontrada")
+    return {"status": "deleted", "session_id": session_id}
+
+
 @app.post("/api/chat")
 async def send_message(req: SendMessageRequest):
     session = chat_manager.get_session(req.session_id)

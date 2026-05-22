@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Trash2,
 } from "lucide-react";
 import type { PanelView, SessionSummary } from "../types";
 
@@ -16,6 +17,7 @@ interface SidebarProps {
   sessions: SessionSummary[];
   onNewSession: () => void;
   onLoadSession: (id: string) => void;
+  onDeleteSession: (id: string) => void;
   activeSessionId?: string;
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -41,6 +43,7 @@ export default function Sidebar({
   sessions,
   onNewSession,
   onLoadSession,
+  onDeleteSession,
   activeSessionId,
   collapsed,
   onToggleCollapse,
@@ -96,22 +99,36 @@ export default function Sidebar({
           </div>
           <div className="space-y-0.5">
             {sessions.map((s) => (
-              <button
+              <div
                 key={s.session_id}
-                onClick={() => onLoadSession(s.session_id)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all ${
+                className={`group flex w-full items-start gap-1 rounded-lg px-3 py-2 text-xs transition-all ${
                   s.session_id === activeSessionId
                     ? "bg-white/10 text-white"
                     : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
                 }`}
               >
-                <div className="truncate font-medium">{s.title}</div>
-                <div className="flex items-center gap-1 mt-0.5 text-[10px] text-gray-600">
-                  <Clock className="w-3 h-3" />
-                  {new Date(s.created_at).toLocaleDateString("pt-BR")}
-                  <span className="ml-auto">{s.message_count} msgs</span>
-                </div>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => onLoadSession(s.session_id)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <div className="truncate font-medium">{s.title}</div>
+                  <div className="mt-0.5 flex items-center gap-1 text-[10px] text-gray-600">
+                    <Clock className="h-3 w-3" />
+                    {new Date(s.created_at).toLocaleDateString("pt-BR")}
+                    <span className="ml-auto">{s.message_count} msgs</span>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDeleteSession(s.session_id)}
+                  className="shrink-0 rounded p-1 text-gray-600 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100 focus:opacity-100"
+                  title="Excluir sessao"
+                  aria-label={`Excluir sessao ${s.title}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
             ))}
           </div>
         </div>

@@ -21,6 +21,11 @@ export const listSessions = () => request<any[]>("/sessions");
 
 export const getSession = (id: string) => request<any>(`/sessions/${id}`);
 
+export const deleteSession = (id: string) =>
+  request<{ status: string; session_id: string }>(`/sessions/${id}`, {
+    method: "DELETE",
+  });
+
 // Chat
 export const sendMessage = (data: {
   session_id: string;

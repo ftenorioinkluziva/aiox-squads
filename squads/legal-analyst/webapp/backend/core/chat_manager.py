@@ -44,6 +44,9 @@ class ChatManager:
     def get_session(self, session_id: str) -> ChatSession | None:
         return self._sessions.get(session_id)
 
+    def delete_session(self, session_id: str) -> bool:
+        return self._sessions.pop(session_id, None) is not None
+
     def list_sessions(self) -> list[dict[str, Any]]:
         return [
             {

@@ -50,6 +50,12 @@ export function useChat() {
     }
   }, [scrollToBottom]);
 
+  const clearSession = useCallback(() => {
+    setSession(null);
+    setMessages([]);
+    setError(null);
+  }, []);
+
   const sendMessage = useCallback(
     async (
       content: string,
@@ -100,6 +106,7 @@ export function useChat() {
     scrollRef,
     initSession,
     loadSession,
+    clearSession,
     sendMessage,
     setError,
   };
