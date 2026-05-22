@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -99,6 +100,128 @@ def _clip_from_db(row: DocumentClipDB) -> DocumentClip:
         image_path=row.image_path,
         label=row.label or "",
     )
+
+
+def _datajud_hit(datajud_response: dict[str, Any]) -> dict[str, Any]:
+    hits = datajud_response.get("hits", {}).get("hits", [])
+    if not hits:
+        return {}
+    first = hits[0]
+    return first if isinstance(first, dict) else {}
+
+
+def _datajud_source(datajud_response: dict[str, Any]) -> dict[str, Any]:
+    source = _datajud_hit(datajud_response).get("_source", {})
+    return source if isinstance(source, dict) else {}
+
+
+def _datajud_name(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in ("nome", "descricao", "codigo", "sigla"):
+            item = value.get(key)
+            if item:
+                return str(item)
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _datajud_list_names(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    names = []
+    for item in values:
+        name = _datajud_name(item)
+        if name:
+            names.append(name)
+    return names
+
+
+def _datajud_parties(source: dict[str, Any]) -> list[str]:
+    parties = source.get("partes") or source.get("polos") or []
+    if not isinstance(parties, list):
+        return []
+    names: list[str] = []
+    for party in parties:
+        if isinstance(party, str):
+            names.append(party)
+            continue
+        if not isinstance(party, dict):
+            continue
+        candidate = party.get("nome") or party.get("nomeParte") or party.get("pessoa", {}).get("nome")
+        if candidate:
+            names.append(str(candidate))
+    return names
+
+
+def _datajud_process_summary(source: dict[str, Any], tribunal_alias: str, process_number: str) -> dict[str, str]:
+    classe = source.get("classe")
+    orgao = source.get("orgaoJulgador")
+    sistema = source.get("sistema")
+    formato = source.get("formato")
+    assuntos = _datajud_list_names(source.get("assuntos"))
+    return {
+        "numero": str(source.get("numeroProcesso") or process_number),
+        "tribunal": str(source.get("tribunal") or tribunal_alias.upper()),
+        "classe": _datajud_name(classe),
+        "orgao_julgador": _datajud_name(orgao),
+        "grau": str(source.get("grau") or ""),
+        "data_ajuizamento": str(source.get("dataAjuizamento") or ""),
+        "nivel_sigilo": str(source.get("nivelSigilo") or ""),
+        "sistema": _datajud_name(sistema),
+        "formato": _datajud_name(formato),
+        "assuntos": "; ".join(assuntos),
+    }
+
+
+def _datajud_page_text(
+    datajud_response: dict[str, Any],
+    tribunal_alias: str,
+    process_number: str,
+) -> str:
+    source = _datajud_source(datajud_response)
+    summary = _datajud_process_summary(source, tribunal_alias, process_number)
+    movimentos = source.get("movimentos") if isinstance(source, dict) else []
+    movimento_lines: list[str] = []
+    if isinstance(movimentos, list):
+        for movimento in movimentos[:12]:
+            if not isinstance(movimento, dict):
+                continue
+            nome = _datajud_name(movimento.get("nome") or movimento)
+            data_hora = movimento.get("dataHora") or movimento.get("data") or ""
+            movimento_lines.append(f"- {data_hora}: {nome}".strip())
+
+    raw_json = json.dumps(datajud_response, ensure_ascii=False, indent=2, sort_keys=True)
+    if len(raw_json) > 30000:
+        raw_json = raw_json[:30000] + "\n... [JSON DataJud truncado para contexto]"
+
+    fields = [
+        "# Documento virtual DataJud",
+        "",
+        "Fonte: API Publica DataJud/CNJ. Este documento virtual contem metadados e movimentacoes retornados pelo DataJud; nao substitui a integra dos autos.",
+        "",
+        "## Identificacao",
+        f"- Numero do processo: {summary['numero']}",
+        f"- Tribunal: {summary['tribunal']}",
+        f"- Classe: {summary['classe']}",
+        f"- Orgao julgador: {summary['orgao_julgador']}",
+        f"- Grau: {summary['grau']}",
+        f"- Data de ajuizamento: {summary['data_ajuizamento']}",
+        f"- Nivel de sigilo: {summary['nivel_sigilo']}",
+        f"- Sistema: {summary['sistema']}",
+        f"- Formato: {summary['formato']}",
+        f"- Assuntos: {summary['assuntos']}",
+        "",
+        "## Movimentos recentes",
+        *(movimento_lines or ["- Nenhum movimento retornado na resposta consultada."]),
+        "",
+        "## Resposta JSON DataJud",
+        "```json",
+        raw_json,
+        "```",
+    ]
+    return "\n".join(fields)
 
 
 def _session_from_db(row: ChatSessionDB) -> ChatSession:
@@ -366,6 +489,95 @@ class DocumentRepository:
                 ))
             await db.commit()
         return metadata, pages
+
+    async def add_datajud_document(
+        self,
+        session_id: str,
+        tribunal_alias: str,
+        process_number: str,
+        datajud_response: dict[str, Any],
+    ) -> tuple[DocumentMetadata, list[DocumentPage]]:
+        source = _datajud_source(datajud_response)
+        summary = _datajud_process_summary(source, tribunal_alias, process_number)
+        text = _datajud_page_text(datajud_response, tribunal_alias, process_number)
+        raw_bytes = json.dumps(datajud_response, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        doc_id = str(uuid.uuid4())[:8]
+        filename = f"DATAJUD_{summary['tribunal']}_{summary['numero']}.json"
+        metadata = DocumentMetadata(
+            doc_id=doc_id,
+            filename=filename,
+            title=f"DataJud - {summary['numero']}",
+            total_pages=1,
+            file_size_bytes=len(raw_bytes),
+            extracted_parties=_datajud_parties(source),
+            process_number=summary["numero"],
+            court=summary["tribunal"],
+            subject=summary["classe"] or summary["assuntos"],
+            text_page_count=1,
+            scanned_page_count=0,
+            ocr_required=False,
+            extraction_status="extracted",
+            extraction_warnings=[
+                "Documento virtual criado a partir da API Publica DataJud/CNJ.",
+                "DataJud fornece metadados e movimentacoes; a integra dos autos pode exigir PDF ou consulta ao tribunal.",
+            ],
+        )
+        page = DocumentPage(
+            page_number=1,
+            text=text,
+            word_count=len(text.split()),
+            text_length=len(text),
+            image_count=0,
+            extraction_method="datajud",
+            extraction_status="extracted",
+            needs_ocr=False,
+        )
+        hit = _datajud_hit(datajud_response)
+        session_factory = _require_session_factory()
+        async with session_factory() as db:
+            db.add(DocumentDB(
+                doc_id=metadata.doc_id,
+                session_id=session_id,
+                filename=metadata.filename,
+                title=metadata.title,
+                stored_path=f"datajud://{tribunal_alias}/{summary['numero']}",
+                content_type="application/vnd.datajud+json",
+                sha256=hashlib.sha256(raw_bytes).hexdigest(),
+                total_pages=metadata.total_pages,
+                file_size_bytes=metadata.file_size_bytes,
+                extracted_parties=metadata.extracted_parties,
+                process_number=metadata.process_number,
+                court=metadata.court,
+                subject=metadata.subject,
+                text_page_count=metadata.text_page_count,
+                scanned_page_count=metadata.scanned_page_count,
+                ocr_required=metadata.ocr_required,
+                extraction_status=metadata.extraction_status,
+                extraction_warnings=metadata.extraction_warnings,
+                extra={
+                    "source_type": "datajud",
+                    "tribunal_alias": tribunal_alias,
+                    "datajud_index": hit.get("_index"),
+                    "datajud_id": hit.get("_id"),
+                    "total_hits": datajud_response.get("hits", {}).get("total"),
+                },
+            ))
+            db.add(DocumentPageDB(
+                doc_id=metadata.doc_id,
+                page_number=page.page_number,
+                text=page.text,
+                images=page.images,
+                word_count=page.word_count,
+                text_length=page.text_length,
+                image_count=page.image_count,
+                extraction_method=page.extraction_method,
+                extraction_status=page.extraction_status,
+                needs_ocr=page.needs_ocr,
+                ocr_status="not_required",
+                extra={"source_type": "datajud"},
+            ))
+            await db.commit()
+        return metadata, [page]
 
     async def list_documents(self, session_id: str | None = None) -> list[DocumentMetadata]:
         session_factory = _require_session_factory()

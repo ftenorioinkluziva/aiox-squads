@@ -13,6 +13,7 @@ import {
   PlayCircle,
   CheckCircle2,
   Circle,
+  Database,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import MessageBubble from "./MessageBubble";
@@ -30,6 +31,7 @@ interface ChatInterfaceProps {
     targetAgent?: string,
   ) => void;
   onUploadPDF: (file: File) => void;
+  onIntakeDataJud: (tribunalAlias: string, processNumber: string) => Promise<void>;
   onDismissError: () => void;
   onReferenceClick?: (docId: string, page?: number) => void;
   documentCount: number;
@@ -47,6 +49,7 @@ export default function ChatInterface({
   scrollRef,
   onSendMessage,
   onUploadPDF,
+  onIntakeDataJud,
   onDismissError,
   onReferenceClick,
   documentCount,
@@ -60,6 +63,10 @@ export default function ChatInterface({
   const [considerations, setConsiderations] = useState("");
   const [showConsiderations, setShowConsiderations] = useState(false);
   const [showCommands, setShowCommands] = useState(false);
+  const [showDataJud, setShowDataJud] = useState(false);
+  const [dataJudTribunal, setDataJudTribunal] = useState("tjdft");
+  const [dataJudProcess, setDataJudProcess] = useState("");
+  const [dataJudLoading, setDataJudLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -107,6 +114,7 @@ export default function ChatInterface({
 
   const commands = [
     { cmd: "*intake", desc: "Iniciar analise de processo via PDF", icon: Upload },
+    { cmd: "*datajud", desc: "Consultar processo pelo numero", icon: Database },
     { cmd: "*relatorio", desc: "Gerar relatorio estrategico", icon: FileText },
     { cmd: "*minutar", desc: "Elaborar peca processual", icon: FileText },
     { cmd: "*pesquisar", desc: "Pesquisar jurisprudencia", icon: FileText },
@@ -120,14 +128,29 @@ export default function ChatInterface({
   const documentsWithWarnings = documents.filter(
     (doc) => doc.ocr_required || doc.extraction_warnings.length > 0,
   );
+  const documentsBlockingAnalysis = documents.filter(
+    (doc) => doc.ocr_required || ["ocr_required", "empty"].includes(doc.extraction_status),
+  );
   const canStartPipeline =
     documentCount > 0 &&
-    documentsWithWarnings.length === 0 &&
+    documentsBlockingAnalysis.length === 0 &&
     (!pipeline || ["completed", "failed", "blocked"].includes(pipeline.status));
   const activePipeline = pipeline && ["queued", "running"].includes(pipeline.status);
   const phases = pipeline
     ? Array.from(new Map(pipeline.steps.map((step) => [step.phase_id, step.phase_name])).entries())
     : [];
+
+  const handleDataJudSubmit = useCallback(async () => {
+    if (!dataJudProcess.trim() || dataJudLoading) return;
+    setDataJudLoading(true);
+    try {
+      await onIntakeDataJud(dataJudTribunal.trim(), dataJudProcess.trim());
+      setDataJudProcess("");
+      setShowDataJud(false);
+    } finally {
+      setDataJudLoading(false);
+    }
+  }, [dataJudLoading, dataJudProcess, dataJudTribunal, onIntakeDataJud]);
 
   return (
     <div className="flex-1 flex flex-col h-full">
@@ -350,6 +373,64 @@ export default function ChatInterface({
         )}
       </AnimatePresence>
 
+      {/* DataJud panel */}
+      <AnimatePresence>
+        {showDataJud && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mx-4 mb-2"
+          >
+            <div className="glass-panel p-3">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs text-gray-300 font-medium">
+                  Consulta DataJud
+                </span>
+                <button
+                  onClick={() => setShowDataJud(false)}
+                  className="text-gray-500 hover:text-gray-300"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="grid grid-cols-[96px_1fr_auto] gap-2">
+                <input
+                  value={dataJudTribunal}
+                  onChange={(e) => setDataJudTribunal(e.target.value)}
+                  className="input-field text-xs"
+                  placeholder="tjdft"
+                />
+                <input
+                  value={dataJudProcess}
+                  onChange={(e) => setDataJudProcess(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleDataJudSubmit();
+                    }
+                  }}
+                  className="input-field text-xs"
+                  placeholder="Numero do processo"
+                />
+                <button
+                  onClick={handleDataJudSubmit}
+                  disabled={!dataJudProcess.trim() || dataJudLoading}
+                  className="inline-flex items-center gap-1.5 px-3 rounded-md bg-brand-600 hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-white"
+                >
+                  {dataJudLoading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Database className="w-3.5 h-3.5" />
+                  )}
+                  Consultar
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Input area */}
       <div className="p-4 border-t border-white/5">
         <div className="glass-panel flex items-end gap-2 p-2">
@@ -368,6 +449,15 @@ export default function ChatInterface({
               title="Enviar PDF"
             >
               <Upload className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setShowDataJud(!showDataJud)}
+              className={`p-2 rounded-lg hover:bg-white/10 transition-colors ${
+                showDataJud ? "text-brand-400" : "text-gray-400"
+              }`}
+              title="Consultar DataJud"
+            >
+              <Database className="w-4 h-4" />
             </button>
             <button
               onClick={() => setShowConsiderations(!showConsiderations)}

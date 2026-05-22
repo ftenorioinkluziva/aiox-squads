@@ -23,7 +23,7 @@ export interface DocumentPage {
   word_count: number;
   text_length: number;
   image_count: number;
-  extraction_method: "text" | "image" | "ocr" | "vision_llm";
+  extraction_method: "text" | "image" | "ocr" | "vision_llm" | "datajud";
   extraction_status: "extracted" | "ocr_required" | "failed";
   needs_ocr: boolean;
 }

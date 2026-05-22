@@ -216,6 +216,14 @@ class DataJudSearchRequest(BaseModel):
     size: int | None = Field(default=None, ge=1, le=10000)
 
 
+class DataJudIntakeRequest(BaseModel):
+    tribunal_alias: str
+    process_number: str
+    session_id: str | None = None
+    start_pipeline: bool = False
+    workflow_id: str = "wf-analise-processual-completa"
+
+
 class AgentSearchRequest(BaseModel):
     query: str
     domain: str = "legal"

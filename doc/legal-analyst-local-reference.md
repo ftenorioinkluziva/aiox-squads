@@ -288,6 +288,7 @@ Endpoints locais adicionados:
 ```text
 GET /api/datajud/process/{tribunal_alias}/{process_number}
 POST /api/datajud/search
+POST /api/intake/datajud
 ```
 
 Exemplo TJDFT:
@@ -295,6 +296,23 @@ Exemplo TJDFT:
 ```text
 GET /api/datajud/process/tjdft/07028077020258070012
 ```
+
+Intake direto por numero de processo:
+
+```powershell
+Invoke-RestMethod -Method Post "http://127.0.0.1:8001/api/intake/datajud" `
+  -ContentType "application/json" `
+  -Body '{"tribunal_alias":"tjdft","process_number":"07028077020258070012","start_pipeline":false}'
+```
+
+Comportamento:
+
+- consulta o processo na API Publica DataJud/CNJ;
+- cria uma sessao nova quando `session_id` nao e informado;
+- persiste um documento virtual `application/vnd.datajud+json` com uma pagina `extraction_method=datajud`;
+- registra mensagem de intake no chat com referencia ao documento virtual;
+- permite iniciar o pipeline com `start_pipeline=true`, sem PDF, usando os metadados e movimentacoes DataJud como contexto oficial;
+- mantem o aviso de limite: DataJud nao substitui a integra dos autos quando a analise depender de pecas, provas, despachos ou decisoes completas.
 
 Prioridade 1:
 

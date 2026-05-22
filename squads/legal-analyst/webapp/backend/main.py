@@ -17,7 +17,10 @@ from core.models import (
     AgentCreationRequest,
     AgentSearchRequest,
     ClipRequest,
+    DataJudIntakeRequest,
     DataJudSearchRequest,
+    DocumentReference,
+    DocumentRefType,
     DraftPieceRequest,
     SendMessageRequest,
     StartPipelineRequest,
@@ -103,6 +106,119 @@ async def datajud_search(req: DataJudSearchRequest):
     try:
         return await search_datajud(req.tribunal_alias, req.query, req.size)
     except DataJudConfigurationError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        status = getattr(getattr(e, "response", None), "status_code", 502)
+        detail = getattr(getattr(e, "response", None), "text", str(e))
+        raise HTTPException(status_code=status, detail=detail)
+
+
+def _datajud_first_source(datajud_response: dict) -> dict:
+    hits = datajud_response.get("hits", {}).get("hits", [])
+    if not hits:
+        return {}
+    source = hits[0].get("_source", {})
+    return source if isinstance(source, dict) else {}
+
+
+def _datajud_total(datajud_response: dict) -> int:
+    total = datajud_response.get("hits", {}).get("total", 0)
+    if isinstance(total, dict):
+        return int(total.get("value") or 0)
+    return int(total or 0)
+
+
+def _datajud_intake_message(datajud_response: dict, doc_id: str) -> str:
+    source = _datajud_first_source(datajud_response)
+    classe = source.get("classe") if isinstance(source.get("classe"), dict) else {}
+    orgao = source.get("orgaoJulgador") if isinstance(source.get("orgaoJulgador"), dict) else {}
+    numero = source.get("numeroProcesso", "")
+    tribunal = source.get("tribunal", "")
+    classe_nome = classe.get("nome") or classe.get("descricao") or ""
+    orgao_nome = orgao.get("nome") or orgao.get("descricao") or ""
+    return f"""Intake DataJud recebido.
+
+Documento virtual criado a partir da API Publica DataJud/CNJ.
+
+- Doc. ID: {doc_id}
+- Processo: {numero}
+- Tribunal: {tribunal}
+- Classe: {classe_nome}
+- Orgao julgador: {orgao_nome}
+- Total de resultados DataJud: {_datajud_total(datajud_response)}
+
+Observacao: o DataJud fornece metadados e movimentacoes processuais. Para analise de pecas, provas, despachos ou decisoes em integra, anexe o PDF dos autos ou do documento especifico quando necessario.
+
+Voce ja pode iniciar a analise processual com este contexto oficial ou complementar com documentos."""
+
+
+@app.post("/api/intake/datajud")
+async def intake_datajud(req: DataJudIntakeRequest):
+    try:
+        datajud_response = await search_process_number(req.tribunal_alias, req.process_number)
+        total = _datajud_total(datajud_response)
+        if total < 1:
+            raise HTTPException(status_code=404, detail="Processo nao encontrado no DataJud para o tribunal informado")
+
+        source = _datajud_first_source(datajud_response)
+        process_number = str(source.get("numeroProcesso") or req.process_number)
+        title = f"DataJud {process_number}"
+        session = (
+            await session_repository.ensure_session(req.session_id, title=title)
+            if req.session_id
+            else await session_repository.create_session(title=title)
+        )
+        metadata, _pages = await document_repository.add_datajud_document(
+            session_id=session.session_id,
+            tribunal_alias=req.tribunal_alias,
+            process_number=req.process_number,
+            datajud_response=datajud_response,
+        )
+        reference = DocumentReference(
+            doc_id=metadata.doc_id,
+            page=1,
+            label="Consulta DataJud",
+            ref_type=DocumentRefType.PAGE,
+        )
+        await session_repository.add_user_message(
+            session.session_id,
+            f"*intake DataJud: {req.tribunal_alias} {req.process_number}",
+            attachments=[metadata.doc_id],
+        )
+        await session_repository.add_agent_response(
+            session.session_id,
+            _datajud_intake_message(datajud_response, metadata.doc_id),
+            agent_id="legal-chief",
+            agent_name="@legal-chief",
+            references=[reference],
+            metadata={"source_type": "datajud", "doc_id": metadata.doc_id},
+        )
+        pipeline = None
+        if req.start_pipeline:
+            pipeline = await start_pipeline(session.session_id, req.workflow_id)
+            if pipeline["status"] == "queued":
+                schedule_pipeline(pipeline["id"])
+
+        latest_session = await session_repository.get_session(session.session_id)
+        summary = {
+            "total": total,
+            "numero": process_number,
+            "tribunal": source.get("tribunal", ""),
+            "classe": (source.get("classe") or {}).get("nome") if isinstance(source.get("classe"), dict) else "",
+        }
+        return {
+            "session": latest_session.model_dump() if latest_session else session.model_dump(),
+            "document": metadata.model_dump(),
+            "datajud": summary,
+            "pipeline": pipeline,
+        }
+    except HTTPException:
+        raise
+    except DataJudConfigurationError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -188,6 +188,33 @@ Esperado:
 
 No frontend, enviar:
 
+## Teste 6A - Intake Somente por Numero do Processo via DataJud
+
+```powershell
+$body = @{
+  tribunal_alias = "tjdft"
+  process_number = "07028077020258070012"
+  start_pipeline = $false
+} | ConvertTo-Json
+
+$intake = Invoke-RestMethod -Method Post "http://127.0.0.1:8001/api/intake/datajud" -ContentType "application/json" -Body $body
+$intake.session.session_id
+$intake.document.doc_id
+Invoke-RestMethod "http://127.0.0.1:8001/api/documents/$($intake.document.doc_id)/pages/1"
+```
+
+Esperado:
+
+- resposta contem `session.session_id`;
+- resposta contem `document.doc_id`;
+- `document.extraction_status` igual a `extracted`;
+- `document.ocr_required` igual a `false`;
+- pagina 1 tem `extraction_method` igual a `datajud`;
+- texto da pagina inicia com `Documento virtual DataJud`;
+- a sessao possui mensagem de intake e resposta do `@legal-chief`.
+
+Para iniciar o pipeline junto com a consulta, repetir com `start_pipeline = $true`.
+
 ```text
 analisar viabilidade de recurso
 ```

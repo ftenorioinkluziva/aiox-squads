@@ -136,6 +136,38 @@ export default function App() {
     [chat, pdf],
   );
 
+  const handleDataJudIntake = useCallback(
+    async (tribunalAlias: string, processNumber: string) => {
+      let sessionId = chat.session?.session_id;
+      try {
+        if (!sessionId) {
+          const session = await chat.initSession("Nova Analise");
+          sessionId = session?.session_id;
+          if (sessionId) {
+            window.localStorage.setItem(LAST_SESSION_KEY, sessionId);
+          }
+        }
+        const result = await api.intakeDataJud({
+          tribunal_alias: tribunalAlias,
+          process_number: processNumber,
+          session_id: sessionId,
+          start_pipeline: false,
+        });
+        const loaded = await chat.loadSession(result.session.session_id);
+        if (loaded?.session_id) {
+          window.localStorage.setItem(LAST_SESSION_KEY, loaded.session_id);
+          pdf.syncDocuments(loaded.documents || []);
+        }
+        const updated = await api.listSessions().catch(() => []);
+        setSessions(updated);
+      } catch (e: any) {
+        chat.setError(e.message || "Erro na consulta DataJud");
+        throw e;
+      }
+    },
+    [chat, pdf],
+  );
+
   const handleClip = useCallback(
     async (data: {
       doc_id: string;
@@ -244,6 +276,7 @@ export default function App() {
               scrollRef={chat.scrollRef}
               onSendMessage={chat.sendMessage}
               onUploadPDF={handleUploadPDF}
+              onIntakeDataJud={handleDataJudIntake}
               onDismissError={() => chat.setError(null)}
               onReferenceClick={handleReferenceClick}
               documentCount={pdf.documents.length}

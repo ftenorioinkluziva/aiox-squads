@@ -51,6 +51,14 @@ export const listDocuments = () => request<any[]>("/documents");
 
 export const getDocument = (id: string) => request<any>(`/documents/${id}`);
 
+export const intakeDataJud = (data: {
+  tribunal_alias: string;
+  process_number: string;
+  session_id?: string;
+  start_pipeline?: boolean;
+  workflow_id?: string;
+}) => request<any>("/intake/datajud", { method: "POST", body: JSON.stringify(data) });
+
 export const getPage = (docId: string, page: number) =>
   request<any>(`/documents/${docId}/pages/${page}`);
 
