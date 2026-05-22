@@ -1,25 +1,21 @@
 """Legal Analyst Squad - Web Application Backend."""
 from __future__ import annotations
 
-import shutil
 import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from core.agent_engine import process_message
-from core.chat_manager import chat_manager
 from core.config import ALLOWED_EXTENSIONS, CLIPS_DIR, CORS_ORIGINS, MAX_UPLOAD_SIZE_MB, UPLOAD_DIR
 from core.db import init_db
-from core.document_store import document_store
 from core.models import (
     AgentCreationRequest,
     AgentSearchRequest,
     ClipRequest,
-    DocumentRefType,
     DraftPieceRequest,
     SendMessageRequest,
     StartPipelineRequest,
@@ -34,6 +30,7 @@ from core.pipeline_service import (
     schedule_pipeline,
     start_pipeline,
 )
+from core.repositories import document_repository, session_repository
 from core.stripe_service import (
     CheckoutRequest,
     create_checkout_session,
@@ -87,18 +84,27 @@ async def health():
 
 @app.post("/api/sessions")
 async def create_session(title: str = "Nova Analise"):
-    session = chat_manager.create_session(title=title)
+    try:
+        session = await session_repository.create_session(title=title)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     return session.model_dump()
 
 
 @app.get("/api/sessions")
 async def list_sessions():
-    return chat_manager.list_sessions()
+    try:
+        return await session_repository.list_sessions()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @app.get("/api/sessions/{session_id}")
 async def get_session(session_id: str):
-    session = chat_manager.get_session(session_id)
+    try:
+        session = await session_repository.get_session(session_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     if not session:
         raise HTTPException(status_code=404, detail="Sessao nao encontrada")
     return session.model_dump()
@@ -106,7 +112,10 @@ async def get_session(session_id: str):
 
 @app.delete("/api/sessions/{session_id}")
 async def delete_session(session_id: str):
-    deleted = chat_manager.delete_session(session_id)
+    try:
+        deleted = await session_repository.delete_session(session_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     if not deleted:
         raise HTTPException(status_code=404, detail="Sessao nao encontrada")
     return {"status": "deleted", "session_id": session_id}
@@ -114,7 +123,10 @@ async def delete_session(session_id: str):
 
 @app.post("/api/chat")
 async def send_message(req: SendMessageRequest):
-    session = chat_manager.get_session(req.session_id)
+    try:
+        session = await session_repository.get_session(req.session_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     if not session:
         raise HTTPException(status_code=404, detail="Sessao nao encontrada")
 
@@ -206,17 +218,14 @@ async def upload_document(file: UploadFile = File(...), session_id: str = ""):
     filepath = UPLOAD_DIR / safe_name
     filepath.write_bytes(content)
 
-    metadata, pages = document_store.add_document(filepath)
+    try:
+        if session_id:
+            await session_repository.ensure_session(session_id)
+        metadata, pages = await document_repository.add_document(filepath, session_id=session_id or None)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
-    # Associate with session
-    if session_id:
-        session = chat_manager.get_session(session_id)
-        if not session:
-            session = chat_manager.create_session(
-                title="Analise recuperada",
-                session_id=session_id,
-            )
-        session.documents.append(metadata)
+    _ = pages
 
     return UploadResponse(
         doc_id=metadata.doc_id,
@@ -228,12 +237,19 @@ async def upload_document(file: UploadFile = File(...), session_id: str = ""):
 
 @app.get("/api/documents")
 async def list_documents():
-    return [d.model_dump() for d in document_store.list_documents()]
+    try:
+        docs = await document_repository.list_documents()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    return [d.model_dump() for d in docs]
 
 
 @app.get("/api/documents/{doc_id}")
 async def get_document(doc_id: str):
-    doc = document_store.get_document(doc_id)
+    try:
+        doc = await document_repository.get_document(doc_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     if not doc:
         raise HTTPException(status_code=404, detail="Documento nao encontrado")
     return doc.model_dump()
@@ -241,7 +257,10 @@ async def get_document(doc_id: str):
 
 @app.get("/api/documents/{doc_id}/pages/{page_number}")
 async def get_page(doc_id: str, page_number: int):
-    page = document_store.get_page(doc_id, page_number)
+    try:
+        page = await document_repository.get_page(doc_id, page_number)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     if not page:
         raise HTTPException(status_code=404, detail="Pagina nao encontrada")
     return page.model_dump()
@@ -249,7 +268,10 @@ async def get_page(doc_id: str, page_number: int):
 
 @app.get("/api/documents/{doc_id}/pages/{page_number}/thumbnail")
 async def get_page_thumbnail(doc_id: str, page_number: int):
-    thumbnail = document_store.get_page_thumbnail(doc_id, page_number)
+    try:
+        thumbnail = await document_repository.get_page_thumbnail(doc_id, page_number)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     if not thumbnail:
         raise HTTPException(status_code=404, detail="Thumbnail nao disponivel")
     return {"thumbnail": thumbnail, "page": page_number}
@@ -259,7 +281,10 @@ async def get_page_thumbnail(doc_id: str, page_number: int):
 async def search_document(doc_id: str, q: str = ""):
     if not q:
         raise HTTPException(status_code=400, detail="Query vazia")
-    results = document_store.search(doc_id, q)
+    try:
+        results = await document_repository.search(doc_id, q)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     return {"results": results, "total": len(results)}
 
 
@@ -269,14 +294,17 @@ async def search_document(doc_id: str, q: str = ""):
 
 @app.post("/api/clips")
 async def create_clip(req: ClipRequest):
-    clip = document_store.create_clip(
-        doc_id=req.doc_id,
-        page_start=req.page_start,
-        page_end=req.page_end,
-        x0=req.x0, y0=req.y0, x1=req.x1, y1=req.y1,
-        clip_type=req.clip_type,
-        label=req.label,
-    )
+    try:
+        clip = await document_repository.create_clip(
+            doc_id=req.doc_id,
+            page_start=req.page_start,
+            page_end=req.page_end,
+            x0=req.x0, y0=req.y0, x1=req.x1, y1=req.y1,
+            clip_type=req.clip_type,
+            label=req.label,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     if not clip:
         raise HTTPException(status_code=404, detail="Documento nao encontrado")
     return clip.model_dump()
@@ -284,13 +312,19 @@ async def create_clip(req: ClipRequest):
 
 @app.get("/api/clips")
 async def list_clips(doc_id: str | None = None):
-    clips = document_store.list_clips(doc_id)
+    try:
+        clips = await document_repository.list_clips(doc_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     return [c.model_dump() for c in clips]
 
 
 @app.get("/api/clips/{clip_id}")
 async def get_clip(clip_id: str):
-    clip = document_store.get_clip(clip_id)
+    try:
+        clip = await document_repository.get_clip(clip_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     if not clip:
         raise HTTPException(status_code=404, detail="Recorte nao encontrado")
     return clip.model_dump()
@@ -298,7 +332,10 @@ async def get_clip(clip_id: str):
 
 @app.get("/api/clips/{clip_id}/image")
 async def get_clip_image(clip_id: str):
-    clip = document_store.get_clip(clip_id)
+    try:
+        clip = await document_repository.get_clip(clip_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     if not clip or not clip.image_path:
         raise HTTPException(status_code=404, detail="Imagem nao encontrada")
     return FileResponse(clip.image_path)
@@ -388,7 +425,10 @@ commands:
 @app.post("/api/draft")
 async def draft_piece(req: DraftPieceRequest):
     """Generate a legal piece draft with document references and clips."""
-    session = chat_manager.get_session(req.session_id)
+    try:
+        session = await session_repository.get_session(req.session_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     if not session:
         raise HTTPException(status_code=404, detail="Sessao nao encontrada")
 
@@ -404,7 +444,10 @@ async def draft_piece(req: DraftPieceRequest):
 @app.post("/api/report")
 async def strategic_report(req: StrategicReportRequest):
     """Generate a strategic legal report."""
-    session = chat_manager.get_session(req.session_id)
+    try:
+        session = await session_repository.get_session(req.session_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     if not session:
         raise HTTPException(status_code=404, detail="Sessao nao encontrada")
 

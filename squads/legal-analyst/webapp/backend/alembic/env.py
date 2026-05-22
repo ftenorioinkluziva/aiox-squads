@@ -7,6 +7,7 @@ from sqlalchemy import engine_from_config, pool
 
 from core.config import DATABASE_URL
 from core.db import Base, _normalize_database_url
+from core import app_db  # noqa: F401
 from core import pipeline_db  # noqa: F401
 
 config = context.config

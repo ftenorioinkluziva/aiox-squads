@@ -6,16 +6,14 @@ import logging
 import re
 from typing import Any
 
-from .chat_manager import chat_manager
-from .document_store import document_store
 from .llm_provider import build_legal_system_prompt, generate_text
 from .models import (
-    AgentInfo,
     ChatMessage,
     DocumentReference,
     MessageRole,
     SessionPhase,
 )
+from .repositories import document_repository, session_repository
 
 logger = logging.getLogger(__name__)
 
@@ -93,14 +91,14 @@ async def process_message(
     """Process a user message through the agent pipeline."""
 
     # Add user message
-    chat_manager.add_user_message(
+    await session_repository.add_user_message(
         session_id=session_id,
         content=content,
         considerations=considerations,
         references=references,
     )
 
-    session = chat_manager.get_session(session_id)
+    session = await session_repository.get_session(session_id)
     if not session:
         raise ValueError(f"Session {session_id} not found")
 
@@ -111,14 +109,15 @@ async def process_message(
 
     # Handle special intents
     if intent == "agentes":
-        return _handle_agents_list(session_id)
+        return await _handle_agents_list(session_id)
 
     if intent == "recortar":
-        return _handle_clip_instructions(session_id)
+        return await _handle_clip_instructions(session_id)
 
     # Update phase
     phase = route_to_phase(intent)
-    chat_manager.update_phase(session_id, phase)
+    await session_repository.update_phase(session_id, phase)
+    session.phase = phase
 
     # Build agent response based on context
     response_content = await _generate_agent_response(
@@ -128,7 +127,7 @@ async def process_message(
         references=references,
     )
 
-    return chat_manager.add_agent_response(
+    return await session_repository.add_agent_response(
         session_id=session_id,
         content=response_content,
         agent_id=agent_id or "legal-chief",
@@ -138,12 +137,12 @@ async def process_message(
     )
 
 
-def _build_document_context(session: Any) -> str:
+async def _build_document_context(session: Any) -> str:
     """Build document context string from session documents."""
     doc_context = ""
     if session.documents:
         for doc in session.documents:
-            pages = document_store.get_pages(doc.doc_id)
+            pages = await document_repository.get_pages(doc.doc_id)
             doc_context += f"\n**Doc. ID {doc.doc_id}** - {doc.filename}\n"
             doc_context += f"Processo: {doc.process_number or 'N/I'} | "
             doc_context += f"Tribunal: {doc.court or 'N/I'} | "
@@ -156,13 +155,13 @@ def _build_document_context(session: Any) -> str:
     return doc_context
 
 
-def _build_reference_context(references: list[DocumentReference] | None) -> str:
+async def _build_reference_context(references: list[DocumentReference] | None) -> str:
     """Build reference context string from document references."""
     ref_context = ""
     if references:
         for ref in references:
-            resolved = document_store.resolve_reference(ref)
-            remissao = document_store.build_remissao_text(ref)
+            resolved = await document_repository.resolve_reference(ref)
+            remissao = await document_repository.build_remissao_text(ref)
             if resolved.get("content"):
                 ref_context += f"\n{remissao}:\n{resolved['content'][:1000]}\n"
     return ref_context
@@ -186,8 +185,8 @@ async def _generate_agent_response(
 ) -> str:
     """Generate agent response via Anthropic API. Falls back to templates if no API key."""
 
-    doc_context = _build_document_context(session)
-    ref_context = _build_reference_context(references)
+    doc_context = await _build_document_context(session)
+    ref_context = await _build_reference_context(references)
 
     try:
         return await _call_llm_api(
@@ -522,7 +521,7 @@ Posso direcionar para:
 O que deseja?"""
 
 
-def _handle_agents_list(session_id: str) -> ChatMessage:
+async def _handle_agents_list(session_id: str) -> ChatMessage:
     content = """## Agentes Disponiveis
 
 | Agente | Funcao | Tier |
@@ -546,7 +545,7 @@ def _handle_agents_list(session_id: str) -> ChatMessage:
 **Para acionar um agente**, mencione-o pelo @nome ou descreva sua necessidade.
 **Para criar um novo agente**, use o painel de Agentes e clique em "Criar Agente via Skill"."""
 
-    return chat_manager.add_agent_response(
+    return await session_repository.add_agent_response(
         session_id=session_id,
         content=content,
         agent_id="legal-chief",
@@ -554,7 +553,7 @@ def _handle_agents_list(session_id: str) -> ChatMessage:
     )
 
 
-def _handle_clip_instructions(session_id: str) -> ChatMessage:
+async def _handle_clip_instructions(session_id: str) -> ChatMessage:
     content = """## Como Recortar Documentos
 
 Use o **Painel de Documentos** (icone de documento na barra lateral) para:
@@ -571,7 +570,7 @@ Os recortes ficam disponiveis para:
 
 **Formato de remissao:** (Doc. ID XXX, fl. N)"""
 
-    return chat_manager.add_agent_response(
+    return await session_repository.add_agent_response(
         session_id=session_id,
         content=content,
         agent_id="legal-chief",

@@ -10,14 +10,13 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from .chat_manager import chat_manager
 from .config import WORKFLOWS_DIR
 from .db import SessionLocal, require_database
-from .document_store import document_store
 from .llm_provider import LLMConfigurationError, build_legal_system_prompt, generate_text
-from .models import MessageRole, SessionPhase
+from .models import SessionPhase
 from .pipeline_db import PipelineEventDB, PipelineOutputDB, PipelineRunDB, PipelineStepDB
 from .pipeline_realtime import pipeline_hub
+from .repositories import document_repository, session_repository
 
 RUN_ACTIVE_STATUSES = {"queued", "running"}
 TERMINAL_STATUSES = {"completed", "failed", "blocked"}
@@ -54,10 +53,10 @@ def _load_workflow(workflow_id: str) -> dict[str, Any]:
     raise ValueError(f"Workflow {workflow_id} nao encontrado")
 
 
-def _build_document_context(session: Any) -> str:
+async def _build_document_context(session: Any) -> str:
     parts = []
     for doc in session.documents:
-        pages = document_store.get_pages(doc.doc_id)
+        pages = await document_repository.get_pages(doc.doc_id)
         parts.append(
             f"Doc. ID {doc.doc_id} - {doc.filename}\n"
             f"Processo: {doc.process_number or 'N/I'} | Tribunal: {doc.court or 'N/I'} | "
@@ -189,7 +188,7 @@ async def _add_event(session, run_id: str, event_type: str, message: str, payloa
 async def start_pipeline(session_id: str, workflow_id: str = "wf-analise-processual-completa") -> dict[str, Any]:
     require_database()
     assert SessionLocal is not None
-    chat_session = chat_manager.get_session(session_id)
+    chat_session = await session_repository.get_session(session_id)
     if not chat_session:
         raise ValueError("Sessao nao encontrada")
     if not chat_session.documents:
@@ -378,10 +377,10 @@ async def _call_step_llm(run_id: str, step_id: str) -> str:
         step = next((item for item in run.steps if item.id == step_id), None) if run else None
         if not run or not step:
             raise ValueError("Step nao encontrado")
-        chat_session = chat_manager.get_session(run.session_id)
+        chat_session = await session_repository.get_session(run.session_id)
         if not chat_session:
             raise ValueError("Sessao nao encontrada")
-        doc_context = _build_document_context(chat_session)
+        doc_context = await _build_document_context(chat_session)
         completed_outputs = [
             f"## {item.task_id} ({item.agent_id})\n{item.output_text}"
             for item in run.steps
@@ -431,8 +430,8 @@ async def _complete_run(run_id: str) -> None:
         await _add_event(session, run_id, "run_completed", "Pipeline concluido", {"output": "markdown"})
         await session.commit()
 
-        chat_manager.update_phase(run.session_id, SessionPhase.ENTREGA)
-        chat_manager.add_agent_response(
+        await session_repository.update_phase(run.session_id, SessionPhase.ENTREGA)
+        await session_repository.add_agent_response(
             session_id=run.session_id,
             content=content_md,
             agent_id="legal-chief",

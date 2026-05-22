@@ -4,6 +4,18 @@
 
 Remover a dependencia de memoria para sessoes, mensagens, documentos, paginas e clips.
 
+## Status
+
+Em implementacao.
+
+Primeira fatia tecnica iniciada:
+
+- modelos DB criados para sessoes, mensagens, documentos, paginas e clips;
+- migration `0002_chat_document_tables` adicionada;
+- repositorios DB-backed criados;
+- endpoints principais de sessao, documento, pagina, busca e clip passaram a usar repositorios;
+- `agent_engine` e `pipeline_service` passaram a consultar contexto por repositorio persistente nos caminhos principais.
+
 ## Resultado Esperado
 
 A aplicacao deve sobreviver a reload e restart do backend mantendo:
