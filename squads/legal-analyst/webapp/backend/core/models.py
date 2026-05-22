@@ -210,6 +210,12 @@ class StartPipelineRequest(BaseModel):
     workflow_id: str = "wf-analise-processual-completa"
 
 
+class DataJudSearchRequest(BaseModel):
+    tribunal_alias: str
+    query: dict[str, Any]
+    size: int | None = Field(default=None, ge=1, le=10000)
+
+
 class AgentSearchRequest(BaseModel):
     query: str
     domain: str = "legal"

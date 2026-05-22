@@ -103,6 +103,7 @@ Campos relevantes:
 - `APP_URL`
 - `JUSBRASIL_API_KEY`
 - `DATAJUD_API_KEY`
+- `DATAJUD_BASE_URL`
 
 Sem chave da Anthropic, o backend ainda roda com respostas fallback.
 
@@ -266,6 +267,34 @@ Frontend:
 - O pipeline inicia por botao no chat, nao automaticamente apos upload.
 - Documento com `ocr_required=true` bloqueia a analise ate a leitura complementar.
 - O stepper mostra fases reais a partir de `pipeline_steps`, nao texto mockado.
+
+## Integracao DataJud
+
+A API Publica do DataJud usa a base:
+
+```text
+https://api-publica.datajud.cnj.jus.br/{alias_do_tribunal}/_search
+```
+
+Autenticacao:
+
+```text
+Authorization: APIKey {DATAJUD_API_KEY}
+Content-Type: application/json
+```
+
+Endpoints locais adicionados:
+
+```text
+GET /api/datajud/process/{tribunal_alias}/{process_number}
+POST /api/datajud/search
+```
+
+Exemplo TJDFT:
+
+```text
+GET /api/datajud/process/tjdft/07028077020258070012
+```
 
 Prioridade 1:
 

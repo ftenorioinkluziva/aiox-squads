@@ -11,11 +11,13 @@ from fastapi.staticfiles import StaticFiles
 
 from core.agent_engine import process_message
 from core.config import ALLOWED_EXTENSIONS, CLIPS_DIR, CORS_ORIGINS, MAX_UPLOAD_SIZE_MB, UPLOAD_DIR
+from core.datajud_client import DataJudConfigurationError, search_datajud, search_process_number
 from core.db import init_db
 from core.models import (
     AgentCreationRequest,
     AgentSearchRequest,
     ClipRequest,
+    DataJudSearchRequest,
     DraftPieceRequest,
     SendMessageRequest,
     StartPipelineRequest,
@@ -76,6 +78,38 @@ async def startup_event():
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "squad": "legal-analyst", "version": "1.0.0"}
+
+
+# ---------------------------------------------------------------------------
+# DataJud
+# ---------------------------------------------------------------------------
+
+@app.get("/api/datajud/process/{tribunal_alias}/{process_number}")
+async def datajud_process_lookup(tribunal_alias: str, process_number: str):
+    try:
+        return await search_process_number(tribunal_alias, process_number)
+    except DataJudConfigurationError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        status = getattr(getattr(e, "response", None), "status_code", 502)
+        detail = getattr(getattr(e, "response", None), "text", str(e))
+        raise HTTPException(status_code=status, detail=detail)
+
+
+@app.post("/api/datajud/search")
+async def datajud_search(req: DataJudSearchRequest):
+    try:
+        return await search_datajud(req.tribunal_alias, req.query, req.size)
+    except DataJudConfigurationError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        status = getattr(getattr(e, "response", None), "status_code", 502)
+        detail = getattr(getattr(e, "response", None), "text", str(e))
+        raise HTTPException(status_code=status, detail=detail)
 
 
 # ---------------------------------------------------------------------------
