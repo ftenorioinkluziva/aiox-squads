@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
@@ -11,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from .config import WORKFLOWS_DIR
+from .datajud_client import DataJudConfigurationError, search_process_number
 from .db import SessionLocal, require_database
 from .llm_provider import LLMConfigurationError, build_legal_system_prompt, generate_text
 from .models import SessionPhase
@@ -18,12 +21,21 @@ from .pipeline_db import PipelineEventDB, PipelineOutputDB, PipelineRunDB, Pipel
 from .pipeline_realtime import pipeline_hub
 from .repositories import document_repository, session_repository
 
+logger = logging.getLogger(__name__)
+
 RUN_ACTIVE_STATUSES = {"queued", "running"}
 TERMINAL_STATUSES = {"completed", "failed", "blocked"}
+_datajud_context_cache: dict[str, tuple[str, list[dict[str, Any]]]] = {}
 
 
 class PipelineBlockedError(RuntimeError):
     """Raised when the workflow finds a legal or document limitation, not a technical failure."""
+
+
+COURT_TO_DATAJUD_ALIAS = {
+    "TJDF": "tjdft",
+    "TJDFT": "tjdft",
+}
 
 TASK_AGENT_MAP = {
     "classificar-processo": "barbosa-classifier",
@@ -69,6 +81,102 @@ async def _build_document_context(session: Any) -> str:
         for page in pages[:8]:
             parts.append(f"--- Pagina {page.page_number} ---\n{page.text[:3000]}")
     return "\n\n".join(parts)
+
+
+def _court_to_datajud_alias(court: str) -> str | None:
+    clean = (court or "").strip().upper()
+    if not clean:
+        return None
+    if clean in COURT_TO_DATAJUD_ALIAS:
+        return COURT_TO_DATAJUD_ALIAS[clean]
+    if clean.startswith(("TJ", "TRF", "TRT", "TRE")) or clean in {"STJ", "TST", "TSE", "STM"}:
+        return clean.lower()
+    return None
+
+
+def _summarize_datajud_response(doc: Any, response: dict[str, Any]) -> str:
+    hits = response.get("hits", {})
+    total_raw = hits.get("total", 0)
+    total = total_raw.get("value", total_raw) if isinstance(total_raw, dict) else total_raw
+    first = (hits.get("hits") or [{}])[0]
+    source = first.get("_source") or {}
+    classe = source.get("classe") or {}
+    orgao = source.get("orgaoJulgador") or {}
+    assuntos = source.get("assuntos") or []
+    movimentos = source.get("movimentos") or []
+    partes = source.get("partes") or []
+
+    resumo = {
+        "doc_id": doc.doc_id,
+        "consulta": {
+            "numeroProcesso": doc.process_number,
+            "tribunal_detectado": doc.court,
+            "total_resultados": total,
+            "indice": first.get("_index"),
+        },
+        "processo": {
+            "numeroProcesso": source.get("numeroProcesso"),
+            "tribunal": source.get("tribunal"),
+            "classe": classe,
+            "orgaoJulgador": orgao,
+            "grau": source.get("grau"),
+            "dataAjuizamento": source.get("dataAjuizamento"),
+            "nivelSigilo": source.get("nivelSigilo"),
+            "formato": source.get("formato"),
+            "sistema": source.get("sistema"),
+        },
+        "assuntos": assuntos[:8],
+        "partes": partes[:12],
+        "movimentos_recentes": movimentos[-10:] if isinstance(movimentos, list) else [],
+    }
+    return json.dumps(resumo, ensure_ascii=False, indent=2)
+
+
+async def _build_datajud_context(chat_session: Any) -> tuple[str, list[dict[str, Any]]]:
+    cached = _datajud_context_cache.get(chat_session.session_id)
+    if cached:
+        return cached
+
+    contexts: list[str] = []
+    lookups: list[dict[str, Any]] = []
+    for doc in chat_session.documents:
+        if not doc.process_number:
+            continue
+        alias = _court_to_datajud_alias(doc.court)
+        if not alias:
+            continue
+        try:
+            response = await search_process_number(alias, doc.process_number)
+        except DataJudConfigurationError as exc:
+            lookups.append({"doc_id": doc.doc_id, "status": "not_configured", "error": str(exc)})
+            continue
+        except Exception as exc:
+            logger.warning("DataJud lookup failed for %s/%s: %s", alias, doc.process_number, exc)
+            lookups.append({"doc_id": doc.doc_id, "status": "failed", "tribunal_alias": alias, "error": str(exc)})
+            continue
+
+        contexts.append(_summarize_datajud_response(doc, response))
+        hits = response.get("hits", {})
+        total_raw = hits.get("total", 0)
+        total = total_raw.get("value", total_raw) if isinstance(total_raw, dict) else total_raw
+        lookups.append({
+            "doc_id": doc.doc_id,
+            "status": "ok",
+            "tribunal_alias": alias,
+            "process_number": doc.process_number,
+            "total": total,
+        })
+
+    if not contexts:
+        result = ("", lookups)
+        _datajud_context_cache[chat_session.session_id] = result
+        return result
+    result = (
+        "\n\n".join(f"### Consulta DataJud {index + 1}\n```json\n{context}\n```" for index, context in enumerate(contexts)),
+        lookups,
+    )
+    _datajud_context_cache[chat_session.session_id] = result
+    return result
 
 
 def _serialize_dt(value: datetime | None) -> str | None:
@@ -224,6 +332,25 @@ async def start_pipeline(session_id: str, workflow_id: str = "wf-analise-process
             await session.commit()
             loaded = await _load_run(session, run.id)
             return serialize_run(loaded)
+
+        datajud_context, datajud_lookups = await _build_datajud_context(chat_session)
+        if datajud_context:
+            run.current_phase_id = "datajud_enriched"
+            await _add_event(
+                session,
+                run.id,
+                "datajud_enriched",
+                "Dados oficiais DataJud anexados ao contexto do pipeline",
+                {"lookups": datajud_lookups},
+            )
+        elif datajud_lookups:
+            await _add_event(
+                session,
+                run.id,
+                "datajud_unavailable",
+                "DataJud nao foi anexado ao contexto do pipeline",
+                {"lookups": datajud_lookups},
+            )
 
         sort_order = 0
         for phase in workflow.get("phases", []):
@@ -405,12 +532,20 @@ async def _call_step_llm(run_id: str, step_id: str) -> str:
         if not chat_session:
             raise ValueError("Sessao nao encontrada")
         doc_context = await _build_document_context(chat_session)
+        datajud_context, _datajud_lookups = await _build_datajud_context(chat_session)
         completed_outputs = [
             f"## {item.task_id} ({item.agent_id})\n{item.output_text}"
             for item in run.steps
             if item.status == "completed" and item.output_text
         ]
         extra_context = "\n\n".join(completed_outputs[-8:])
+        if datajud_context:
+            extra_context = (
+                "## Dados oficiais DataJud consultados pela API Publica CNJ\n"
+                "Use estes dados como fonte oficial para classe, tribunal, orgao julgador, assuntos e movimentos quando disponiveis.\n\n"
+                f"{datajud_context}\n\n"
+                f"{extra_context}"
+            ).strip()
         user_prompt = f"""Execute a tarefa do pipeline juridico.
 
 Fase: {step.phase_name}
