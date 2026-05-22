@@ -4,14 +4,11 @@ from __future__ import annotations
 import json
 import logging
 import re
-from pathlib import Path
 from typing import Any
 
-import anthropic
-
 from .chat_manager import chat_manager
-from .config import AGENTS_DIR, ANTHROPIC_API_KEY, ANTHROPIC_MODEL
 from .document_store import document_store
+from .llm_provider import build_legal_system_prompt, generate_text
 from .models import (
     AgentInfo,
     ChatMessage,
@@ -21,25 +18,6 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Anthropic client (lazy-initialized)
-_client: anthropic.Anthropic | None = None
-
-
-def _get_client() -> anthropic.Anthropic | None:
-    """Get or create the Anthropic client. Returns None if no API key."""
-    global _client
-    if _client is None and ANTHROPIC_API_KEY:
-        _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    return _client
-
-
-def _load_agent_prompt(agent_id: str) -> str:
-    """Load the full agent prompt from its markdown definition file."""
-    agent_file = AGENTS_DIR / f"{agent_id}.md"
-    if agent_file.exists():
-        return agent_file.read_text(encoding="utf-8")
-    return ""
 
 
 # Agent routing rules based on intent detection
@@ -211,72 +189,35 @@ async def _generate_agent_response(
     doc_context = _build_document_context(session)
     ref_context = _build_reference_context(references)
 
-    # Try API call first
-    client = _get_client()
-    if client:
-        try:
-            return await _call_anthropic_api(
-                client=client,
-                session=session,
-                intent=intent,
-                agent_id=agent_id,
-                doc_context=doc_context,
-                ref_context=ref_context,
-            )
-        except Exception as e:
-            logger.error("Anthropic API call failed, falling back to template: %s", e)
+    try:
+        return await _call_llm_api(
+            session=session,
+            intent=intent,
+            agent_id=agent_id,
+            doc_context=doc_context,
+            ref_context=ref_context,
+        )
+    except Exception as e:
+        logger.error("LLM API call failed, falling back to template: %s", e)
 
     # Fallback to template responses
     return _fallback_template_response(session, intent, doc_context, ref_context)
 
 
-async def _call_anthropic_api(
-    client: anthropic.Anthropic,
+async def _call_llm_api(
     session: Any,
     intent: str,
     agent_id: str,
     doc_context: str,
     ref_context: str,
 ) -> str:
-    """Call Anthropic API with agent-specific system prompt and context."""
-
-    # Load agent definition as system prompt
-    agent_prompt = _load_agent_prompt(agent_id)
-
-    system_parts = [
-        "Voce e um agente do Legal Analyst Squad — sistema de analise juridica processual.",
-        "Responda em portugues brasileiro. Seja preciso, fundamentado e estruturado.",
-        "",
-        "## Principios Imutaveis",
-        "- JURISPRUDENCIA > OPINIAO: Toda analise fundamentada em julgados reais",
-        "- CPC Art. 489 par. 1o: Fundamentacao qualificada obrigatoria",
-        "- CNJ-COMPLIANT: Resolucoes do CNJ sao gates obrigatorios",
-        "- PRECEDENTE E LEI: Sistema de precedentes do CPC (Art. 926-928)",
-    ]
-
-    if agent_prompt:
-        system_parts.append("")
-        system_parts.append("## Definicao do Agente")
-        system_parts.append(agent_prompt)
-
-    if doc_context:
-        system_parts.append("")
-        system_parts.append("## Documentos Carregados")
-        system_parts.append(doc_context)
-
-    if ref_context:
-        system_parts.append("")
-        system_parts.append("## Recortes Referenciados")
-        system_parts.append(ref_context)
-
-    if session.considerations:
-        system_parts.append("")
-        system_parts.append("## Consideracoes do Advogado")
-        system_parts.append(session.considerations)
-
-    system_prompt = "\n".join(system_parts)
-
-    # Build message history
+    """Call the configured LLM providers with agent-specific prompt and context."""
+    system_prompt = build_legal_system_prompt(
+        agent_id=agent_id,
+        doc_context=doc_context,
+        ref_context=ref_context,
+        considerations=session.considerations,
+    )
     history = _build_conversation_history(session)
 
     # If no history (or just the current message), create a user message from intent
@@ -298,14 +239,8 @@ async def _call_anthropic_api(
     if clean_messages and clean_messages[0]["role"] != "user":
         clean_messages.insert(0, {"role": "user", "content": f"*{intent}"})
 
-    response = client.messages.create(
-        model=ANTHROPIC_MODEL,
-        max_tokens=4096,
-        system=system_prompt,
-        messages=clean_messages,
-    )
-
-    return response.content[0].text
+    result = await generate_text(system_prompt=system_prompt, messages=clean_messages)
+    return result.text
 
 
 def _fallback_template_response(

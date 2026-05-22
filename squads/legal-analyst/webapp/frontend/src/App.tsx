@@ -9,6 +9,7 @@ import VSLPage from "./pages/VSLPage";
 import { useChat } from "./hooks/useChat";
 import { useAgents } from "./hooks/useAgents";
 import { usePDF } from "./hooks/usePDF";
+import { usePipeline } from "./hooks/usePipeline";
 import * as api from "./services/api";
 import type { PanelView, SessionSummary } from "./types";
 
@@ -28,6 +29,13 @@ export default function App() {
   const chat = useChat();
   const agents = useAgents();
   const pdf = usePDF();
+  const currentSessionId = chat.session?.session_id;
+  const handlePipelineCompleted = useCallback(() => {
+    if (currentSessionId) {
+      chat.loadSession(currentSessionId);
+    }
+  }, [currentSessionId, chat.loadSession]);
+  const pipeline = usePipeline(currentSessionId, handlePipelineCompleted);
   const didBootstrap = useRef(false);
 
   useEffect(() => {
@@ -240,6 +248,10 @@ export default function App() {
               onReferenceClick={handleReferenceClick}
               documentCount={pdf.documents.length}
               documents={pdf.documents}
+              pipeline={pipeline.pipeline}
+              pipelineLoading={pipeline.loading}
+              pipelineError={pipeline.error}
+              onStartPipeline={pipeline.start}
             />
           )}
 

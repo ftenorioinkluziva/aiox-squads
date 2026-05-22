@@ -195,6 +195,7 @@ primary_region = "gru"
 
 [env]
   ANTHROPIC_MODEL = "claude-sonnet-4-20250514"
+  OPENAI_MODEL = "gpt-4.1-mini"
 
 [http_service]
   internal_port = 8000
@@ -215,7 +216,7 @@ FLYTOML
   echo ""
   echo -e "  ${GOLD}1.${NC} fly auth login"
   echo -e "  ${GOLD}2.${NC} fly launch  (aceite as configuracoes)"
-  echo -e "  ${GOLD}3.${NC} fly secrets set ANTHROPIC_API_KEY=sk-ant-..."
+  echo -e "  ${GOLD}3.${NC} fly secrets set ANTHROPIC_API_KEY=sk-ant-... OPENAI_API_KEY=sk-... DATABASE_URL=postgresql://..."
   echo -e "  ${GOLD}4.${NC} fly deploy"
   echo ""
   echo "Para o frontend, use Vercel ou Cloudflare Pages:"
@@ -251,6 +252,12 @@ services:
         sync: false
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-4-20250514
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: DATABASE_URL
+        sync: false
     disk:
       name: uploads
       mountPath: /app/uploads

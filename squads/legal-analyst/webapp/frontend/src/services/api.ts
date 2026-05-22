@@ -112,3 +112,19 @@ export const strategicReport = (data: {
   session_id: string;
   focus_areas?: string[];
 }) => request<any>("/report", { method: "POST", body: JSON.stringify(data) });
+
+// Pipelines
+export const startPipeline = (data: {
+  session_id: string;
+  workflow_id?: string;
+}) => request<any>("/pipelines/start", { method: "POST", body: JSON.stringify(data) });
+
+export const getPipeline = (runId: string) => request<any>(`/pipelines/${runId}`);
+
+export const getLatestPipeline = (sessionId: string) =>
+  request<{ pipeline: any | null }>(`/sessions/${sessionId}/pipelines/latest`);
+
+export const pipelineWebSocketUrl = (runId: string) => {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}${BASE}/pipelines/${runId}/ws`;
+};

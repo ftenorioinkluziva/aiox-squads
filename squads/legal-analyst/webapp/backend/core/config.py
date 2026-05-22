@@ -2,7 +2,12 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 SQUAD_ROOT = Path(__file__).resolve().parents[3]
+WEBAPP_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(WEBAPP_ROOT / ".env")
+
 AGENTS_DIR = SQUAD_ROOT / "agents"
 DATA_DIR = SQUAD_ROOT / "data"
 TEMPLATES_DIR = SQUAD_ROOT / "templates"
@@ -17,6 +22,9 @@ CLIPS_DIR.mkdir(exist_ok=True)
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 MAX_UPLOAD_SIZE_MB = 50
 ALLOWED_EXTENSIONS = {".pdf"}

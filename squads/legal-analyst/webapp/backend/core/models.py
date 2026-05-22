@@ -205,6 +205,11 @@ class StrategicReportRequest(BaseModel):
     focus_areas: list[str] = Field(default_factory=list)
 
 
+class StartPipelineRequest(BaseModel):
+    session_id: str
+    workflow_id: str = "wf-analise-processual-completa"
+
+
 class AgentSearchRequest(BaseModel):
     query: str
     domain: str = "legal"

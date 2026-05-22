@@ -48,6 +48,9 @@ echo ""
 echo -e "${GREEN}[1/1] Executando deploy na VPS...${NC}"
 ssh "${VPS_USER}@${VPS_IP}" \
   "ANTHROPIC_API_KEY='${ANTHROPIC_API_KEY}' \
+   OPENAI_API_KEY='${OPENAI_API_KEY:-}' \
+   OPENAI_MODEL='${OPENAI_MODEL:-gpt-4.1-mini}' \
+   DATABASE_URL='${DATABASE_URL:-}' \
    REPO_URL='https://github.com/felippepestana/aiox-squads-FelippePestana.git' \
    bash -s" < "$DEPLOY_SCRIPT"
 

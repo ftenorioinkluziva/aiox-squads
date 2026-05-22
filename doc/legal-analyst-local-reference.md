@@ -91,6 +91,9 @@ Campos relevantes:
 
 - `ANTHROPIC_API_KEY`
 - `ANTHROPIC_MODEL`
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
+- `DATABASE_URL`
 - `API_PORT`
 - `UI_PORT`
 - `STRIPE_SECRET_KEY`
@@ -201,6 +204,20 @@ Direcao acordada:
 - Perguntar em linguagem simples apenas o que faltar.
 - Tratar documentos escaneados como fluxo normal, nao como erro do usuario.
 
+## Planejamento de Implementacao
+
+O planejamento por epicos e sprints esta em:
+
+```text
+doc/implementation-plan/README.md
+```
+
+Ordem atual recomendada:
+
+1. Persistencia de sessoes e documentos.
+2. Pipeline retomavel e DB-backed.
+3. OCR real e qualidade juridica dos outputs.
+
 ## Pipeline Proposto de Extracao
 
 Ordem recomendada:
@@ -219,6 +236,33 @@ Para documentos juridicos grandes:
 - responder perguntas via busca de contexto relevante.
 
 ## Proximos Passos Tecnicos
+
+## Pipeline Real Multiagente
+
+Contratos adicionados para execucao real do workflow `wf-analise-processual-completa`:
+
+- `POST /api/pipelines/start` com `session_id` e `workflow_id` opcional.
+- `GET /api/pipelines/{run_id}` para estado persistido.
+- `GET /api/sessions/{session_id}/pipelines/latest` para restaurar a UI.
+- `WS /api/pipelines/{run_id}/ws` para eventos em tempo real.
+
+Persistencia:
+
+- `DATABASE_URL` deve apontar para PostgreSQL/Neon.
+- O backend cria as tabelas no startup via SQLAlchemy e tambem inclui Alembic em `backend/alembic`.
+- URLs Neon com `sslmode=require` e `channel_binding=require` sao normalizadas para `asyncpg`.
+
+LLM:
+
+- Anthropic continua como provedor primario via `ANTHROPIC_API_KEY` e `ANTHROPIC_MODEL`.
+- OpenAI e fallback via `OPENAI_API_KEY` e `OPENAI_MODEL`.
+- Pipeline real nao usa fallback template; se nenhum provedor real estiver configurado, o step falha.
+
+Frontend:
+
+- O pipeline inicia por botao no chat, nao automaticamente apos upload.
+- Documento com `ocr_required=true` bloqueia a analise ate a leitura complementar.
+- O stepper mostra fases reais a partir de `pipeline_steps`, nao texto mockado.
 
 Prioridade 1:
 

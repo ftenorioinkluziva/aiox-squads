@@ -10,10 +10,13 @@ import {
   Loader2,
   AlertCircle,
   X,
+  PlayCircle,
+  CheckCircle2,
+  Circle,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import MessageBubble from "./MessageBubble";
-import type { ChatMessage, DocumentMetadata, DocumentReference } from "../types";
+import type { ChatMessage, DocumentMetadata, DocumentReference, PipelineRun } from "../types";
 
 interface ChatInterfaceProps {
   messages: ChatMessage[];
@@ -31,6 +34,10 @@ interface ChatInterfaceProps {
   onReferenceClick?: (docId: string, page?: number) => void;
   documentCount: number;
   documents: DocumentMetadata[];
+  pipeline: PipelineRun | null;
+  pipelineLoading: boolean;
+  pipelineError: string | null;
+  onStartPipeline: () => void;
 }
 
 export default function ChatInterface({
@@ -44,6 +51,10 @@ export default function ChatInterface({
   onReferenceClick,
   documentCount,
   documents,
+  pipeline,
+  pipelineLoading,
+  pipelineError,
+  onStartPipeline,
 }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
   const [considerations, setConsiderations] = useState("");
@@ -53,7 +64,7 @@ export default function ChatInterface({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSend = useCallback(() => {
-    if (!input.trim() && !isLoading) return;
+    if (!input.trim() || isLoading) return;
     onSendMessage(input, considerations || undefined);
     setInput("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
@@ -109,6 +120,14 @@ export default function ChatInterface({
   const documentsWithWarnings = documents.filter(
     (doc) => doc.ocr_required || doc.extraction_warnings.length > 0,
   );
+  const canStartPipeline =
+    documentCount > 0 &&
+    documentsWithWarnings.length === 0 &&
+    (!pipeline || ["completed", "failed", "blocked"].includes(pipeline.status));
+  const activePipeline = pipeline && ["queued", "running"].includes(pipeline.status);
+  const phases = pipeline
+    ? Array.from(new Map(pipeline.steps.map((step) => [step.phase_id, step.phase_name])).entries())
+    : [];
 
   return (
     <div className="flex-1 flex flex-col h-full">
@@ -151,6 +170,76 @@ export default function ChatInterface({
           </motion.div>
         )}
       </div>
+
+      {/* Pipeline progress */}
+      <AnimatePresence>
+        {(pipeline || documentCount > 0 || pipelineError) && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mx-4 mb-2 px-3 py-3 rounded-lg bg-white/[0.03] border border-white/10"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-gray-200">
+                  Analise processual
+                </div>
+                <div className="text-[11px] text-gray-500 mt-0.5">
+                  {pipeline
+                    ? `Status: ${pipeline.status}`
+                    : "Pronta para iniciar com os documentos anexados"}
+                </div>
+              </div>
+              <button
+                onClick={onStartPipeline}
+                disabled={!canStartPipeline || pipelineLoading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-brand-600 hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-white"
+              >
+                <PlayCircle className="w-3.5 h-3.5" />
+                {pipelineLoading ? "Iniciando..." : "Iniciar analise"}
+              </button>
+            </div>
+
+            {pipelineError && (
+              <div className="mt-2 text-xs text-red-300">{pipelineError}</div>
+            )}
+
+            {pipeline?.error_message && (
+              <div className="mt-2 text-xs text-amber-200">{pipeline.error_message}</div>
+            )}
+
+            {phases.length > 0 && (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3">
+                {phases.map(([phaseId, phaseName]) => {
+                  const phaseSteps = pipeline!.steps.filter((step) => step.phase_id === phaseId);
+                  const complete = phaseSteps.every((step) => step.status === "completed");
+                  const running = activePipeline && pipeline!.current_phase_id === phaseId;
+                  return (
+                    <div
+                      key={phaseId}
+                      className={`flex items-center gap-2 px-2 py-1.5 rounded-md border text-[11px] ${
+                        running
+                          ? "border-brand-400/40 bg-brand-500/10 text-brand-100"
+                          : complete
+                            ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100"
+                            : "border-white/10 bg-white/[0.02] text-gray-400"
+                      }`}
+                    >
+                      {complete ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      ) : (
+                        <Circle className="w-3.5 h-3.5 shrink-0" />
+                      )}
+                      <span className="truncate">{phaseName}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Extraction status banner */}
       <AnimatePresence>

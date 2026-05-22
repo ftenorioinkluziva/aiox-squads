@@ -102,4 +102,45 @@ export interface SessionSummary {
   document_count: number;
 }
 
+export interface PipelineStep {
+  id: string;
+  run_id: string;
+  phase_id: string;
+  phase_name: string;
+  task_id: string;
+  task_description: string;
+  agent_id: string;
+  status: "queued" | "running" | "completed" | "failed" | "blocked";
+  dependencies: string[];
+  output_text?: string | null;
+  error_message?: string | null;
+  sort_order: number;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface PipelineEvent {
+  id?: number;
+  run_id?: string;
+  event_type: string;
+  message?: string;
+  payload: Record<string, unknown>;
+  created_at?: string | null;
+}
+
+export interface PipelineRun {
+  id: string;
+  session_id: string;
+  workflow_id: string;
+  status: "queued" | "running" | "completed" | "failed" | "blocked";
+  current_phase_id?: string | null;
+  error_message?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  completed_at?: string | null;
+  steps: PipelineStep[];
+  events: PipelineEvent[];
+  output_md?: string | null;
+}
+
 export type PanelView = "chat" | "documents" | "agents" | "editor";

@@ -5,7 +5,7 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from core.agent_engine import process_message
 from core.chat_manager import chat_manager
 from core.config import ALLOWED_EXTENSIONS, CLIPS_DIR, CORS_ORIGINS, MAX_UPLOAD_SIZE_MB, UPLOAD_DIR
+from core.db import init_db
 from core.document_store import document_store
 from core.models import (
     AgentCreationRequest,
@@ -21,8 +22,17 @@ from core.models import (
     DocumentRefType,
     DraftPieceRequest,
     SendMessageRequest,
+    StartPipelineRequest,
     StrategicReportRequest,
     UploadResponse,
+)
+from core.pipeline_realtime import pipeline_hub
+from core.pipeline_service import (
+    get_latest_pipeline,
+    get_pipeline,
+    mark_interrupted_runs,
+    schedule_pipeline,
+    start_pipeline,
 )
 from core.stripe_service import (
     CheckoutRequest,
@@ -54,6 +64,12 @@ app.add_middleware(
 # Serve clips as static files
 if CLIPS_DIR.exists():
     app.mount("/clips", StaticFiles(directory=str(CLIPS_DIR)), name="clips")
+
+
+@app.on_event("startup")
+async def startup_event():
+    await init_db()
+    await mark_interrupted_runs()
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +126,63 @@ async def send_message(req: SendMessageRequest):
         target_agent=req.target_agent,
     )
     return response.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Pipelines
+# ---------------------------------------------------------------------------
+
+@app.post("/api/pipelines/start")
+async def start_pipeline_endpoint(req: StartPipelineRequest):
+    try:
+        pipeline = await start_pipeline(req.session_id, req.workflow_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if pipeline["status"] == "queued":
+        schedule_pipeline(pipeline["id"])
+    return pipeline
+
+
+@app.get("/api/pipelines/{run_id}")
+async def get_pipeline_endpoint(run_id: str):
+    try:
+        pipeline = await get_pipeline(run_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Pipeline nao encontrado")
+    return pipeline
+
+
+@app.get("/api/sessions/{session_id}/pipelines/latest")
+async def get_latest_pipeline_endpoint(session_id: str):
+    try:
+        pipeline = await get_latest_pipeline(session_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    if not pipeline:
+        return {"pipeline": None}
+    return {"pipeline": pipeline}
+
+
+@app.websocket("/api/pipelines/{run_id}/ws")
+async def pipeline_ws(websocket: WebSocket, run_id: str):
+    await websocket.accept()
+    queue = await pipeline_hub.subscribe(run_id)
+    try:
+        current = await get_pipeline(run_id)
+        if current:
+            await websocket.send_json({"event_type": "snapshot", "payload": current})
+        while True:
+            event = await queue.get()
+            await websocket.send_json(event)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        pipeline_hub.unsubscribe(run_id, queue)
 
 
 # ---------------------------------------------------------------------------
