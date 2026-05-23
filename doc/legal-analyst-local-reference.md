@@ -314,6 +314,41 @@ Comportamento:
 - permite iniciar o pipeline com `start_pipeline=true`, sem PDF, usando os metadados e movimentacoes DataJud como contexto oficial;
 - mantem o aviso de limite: DataJud nao substitui a integra dos autos quando a analise depender de pecas, provas, despachos ou decisoes completas.
 
+## Estudo: Jurisprudencias.ai
+
+Fonte consultada em 22/05/2026:
+
+- `https://jurisprudencias.ai/api`
+- `https://jurisprudencias.ai/openapi.json`
+- `https://jurisprudencias.ai/llms.txt`
+
+Resumo tecnico:
+
+- Base URL: `https://jurisprudencias.ai/api/v1`.
+- Autenticacao: `Authorization: Bearer jur_seu_token`.
+- Endpoint para listar bases: `GET /api/v1/courts`.
+- Endpoint de busca textual: `GET /api/v1/courts/{court_id}/decisions?q=...&page=0`.
+- Filtros de data suportados: `pub_from`, `pub_to`, `trial_from`, `trial_to`.
+- Endpoint de lookup por numero: `GET /api/v1/courts/{court_id}/decisions/lookup?n=...`.
+- Campos de resposta documentados: `process_number`, `process_type`, `rapporteur`, `adjudicating_body`, `publication_date`, `trial_date`, `excerpt` ou `summary`, `url`, `court`.
+- Cobertura informada no OpenAPI/llms.txt: STF, STJ, TST, TRF3, TRF4, TJPR, TJRJ, TJRS, TJSC, TJSP e CARF.
+- Limites informados na pagina da API: busca gratuita 10/dia; assinante 500/dia. Lookup gratuito 50/dia; assinante 10.000/dia. Headers de limite: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
+
+Encaixe recomendado no Legal Analyst Squad:
+
+- Usar como complemento da fase `pesquisa jurisprudencial`, nao como substituto do DataJud.
+- DataJud continua sendo fonte oficial de metadados/movimentacoes do processo.
+- Jurisprudencias.ai entra como fonte de precedentes estruturados, principalmente para obter relator, orgao julgador, ementa/trecho e link oficial.
+- Criar variaveis futuras:
+  - `JURISPRUDENCIAS_API_KEY`;
+  - `JURISPRUDENCIAS_BASE_URL=https://jurisprudencias.ai/api/v1`.
+- Criar cliente isolado `jurisprudencias_client.py` com:
+  - `list_courts()`;
+  - `search_decisions(court_id, q, page=0, pub_from=None, pub_to=None, trial_from=None, trial_to=None)`;
+  - `lookup_decision(court_id, process_number)`.
+- Persistir resultados relevantes em `pipeline_outputs` ou em uma tabela propria de `legal_research_results` se a pesquisa precisar ser reutilizada entre runs.
+- Tratar `401`, `422`, `429` e `404` como falhas controladas de ferramenta, sem derrubar todo o pipeline.
+
 Prioridade 1:
 
 - Implementar OCR fallback real no backend.

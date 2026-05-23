@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FileText,
   Download,
@@ -57,8 +57,22 @@ export default function LegalEditor({
   const [selectedClips, setSelectedClips] = useState<string[]>([]);
   const [showClipSelector, setShowClipSelector] = useState(false);
   const [showRefInsert, setShowRefInsert] = useState(false);
+  const [showPieceMenu, setShowPieceMenu] = useState(false);
   const [refDocId, setRefDocId] = useState("");
   const [refPage, setRefPage] = useState("");
+  const pieceMenuRef = useRef<HTMLDivElement>(null);
+  const selectedPiece = PIECE_TYPES.find((type) => type.value === pieceType) || PIECE_TYPES[0];
+
+  useEffect(() => {
+    if (!showPieceMenu) return;
+    function handlePointerDown(event: PointerEvent) {
+      if (!pieceMenuRef.current?.contains(event.target as Node)) {
+        setShowPieceMenu(false);
+      }
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [showPieceMenu]);
 
   const handleDraft = useCallback(() => {
     const references: DocumentReference[] = [];
@@ -141,19 +155,53 @@ export default function LegalEditor({
           <label className="text-[10px] text-gray-500 uppercase tracking-wider shrink-0">
             Tipo de Peca
           </label>
-          <div className="relative flex-1">
-            <select
-              value={pieceType}
-              onChange={(e) => setPieceType(e.target.value)}
-              className="input-field text-xs py-1.5 appearance-none pr-8"
+          <div ref={pieceMenuRef} className="relative flex-1">
+            <button
+              type="button"
+              onClick={() => setShowPieceMenu((current) => !current)}
+              className={`input-field text-xs py-1.5 pr-8 text-left ${
+                showPieceMenu ? "border-brand-500/50 ring-2 ring-brand-500/30" : ""
+              }`}
+              aria-haspopup="listbox"
+              aria-expanded={showPieceMenu}
             >
-              {PIECE_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
+              {selectedPiece.label}
+            </button>
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-500 pointer-events-none" />
+            <AnimatePresence>
+              {showPieceMenu && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.12 }}
+                  className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-white/10 bg-legal-slate shadow-2xl shadow-black/30"
+                  role="listbox"
+                >
+                  <div className="max-h-64 overflow-y-auto p-1">
+                    {PIECE_TYPES.map((type) => (
+                      <button
+                        key={type.value}
+                        type="button"
+                        onClick={() => {
+                          setPieceType(type.value);
+                          setShowPieceMenu(false);
+                        }}
+                        className={`w-full rounded-md px-3 py-2 text-left text-xs transition-colors ${
+                          type.value === pieceType
+                            ? "bg-brand-600 text-white"
+                            : "text-gray-300 hover:bg-white/10 hover:text-white"
+                        }`}
+                        role="option"
+                        aria-selected={type.value === pieceType}
+                      >
+                        {type.label}
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </div>

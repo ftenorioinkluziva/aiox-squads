@@ -65,6 +65,10 @@
            transition-all duration-200;
   }
 
+  .input-field option {
+    @apply bg-legal-slate text-gray-100;
+  }
+
   .badge {
     @apply inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full;
   }
