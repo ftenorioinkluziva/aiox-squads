@@ -26,10 +26,7 @@ Ja implementado:
 
 Ainda pendente:
 
-- `ChatManager` continua em memoria;
-- `DocumentStore` continua em memoria;
-- documentos extraidos, paginas e clips nao sao hidratados do banco;
-- runs ativos ainda nao sao retomaveis apos restart;
+- ampliar testes de restart com pipeline parcialmente executado;
 - OCR ainda nao processa documentos escaneados;
 - outputs juridicos ainda sao predominantemente Markdown livre.
 
@@ -44,9 +41,9 @@ Ainda pendente:
 
 ## Ordem Recomendada
 
-1. Sprint 01: persistir sessao/documento.
-2. Sprint 02: tornar o pipeline retomavel.
-3. Sprint 03: OCR e qualidade de entrega.
+1. Ampliar testes de restart do pipeline parcialmente executado.
+2. Sprint 03: OCR e qualidade de entrega.
+3. Intake guiado e revisao humana dos dados extraidos.
 
 ## Definicao de Pronto Global
 

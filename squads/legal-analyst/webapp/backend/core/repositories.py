@@ -24,6 +24,7 @@ from .models import (
     MessageRole,
     SessionPhase,
 )
+from .pipeline_db import PipelineRunDB
 from .pdf_processor import clip_region, extract_pdf, get_page_thumbnail
 
 
@@ -335,6 +336,7 @@ class SessionRepository:
     async def delete_session(self, session_id: str) -> bool:
         session_factory = _require_session_factory()
         async with session_factory() as db:
+            await db.execute(delete(PipelineRunDB).where(PipelineRunDB.session_id == session_id))
             result = await db.execute(delete(ChatSessionDB).where(ChatSessionDB.session_id == session_id))
             await db.commit()
             return (result.rowcount or 0) > 0

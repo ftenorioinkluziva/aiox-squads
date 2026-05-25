@@ -14,12 +14,14 @@ import {
   CheckCircle2,
   Circle,
   Database,
+  Plus,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import MessageBubble from "./MessageBubble";
 import type { ChatMessage, DocumentMetadata, DocumentReference, PipelineRun } from "../types";
 
 interface ChatInterfaceProps {
+  hasActiveSession: boolean;
   messages: ChatMessage[];
   isLoading: boolean;
   error: string | null;
@@ -30,6 +32,7 @@ interface ChatInterfaceProps {
     references?: DocumentReference[],
     targetAgent?: string,
   ) => void;
+  onNewSession: () => void;
   onUploadPDF: (file: File) => void;
   onIntakeDataJud: (tribunalAlias: string, processNumber: string) => Promise<void>;
   onDismissError: () => void;
@@ -43,11 +46,13 @@ interface ChatInterfaceProps {
 }
 
 export default function ChatInterface({
+  hasActiveSession,
   messages,
   isLoading,
   error,
   scrollRef,
   onSendMessage,
+  onNewSession,
   onUploadPDF,
   onIntakeDataJud,
   onDismissError,
@@ -71,11 +76,11 @@ export default function ChatInterface({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSend = useCallback(() => {
-    if (!input.trim() || isLoading) return;
+    if (!hasActiveSession || !input.trim() || isLoading) return;
     onSendMessage(input, considerations || undefined);
     setInput("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [input, considerations, isLoading, onSendMessage]);
+  }, [hasActiveSession, input, considerations, isLoading, onSendMessage]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -104,12 +109,12 @@ export default function ChatInterface({
   const handleFileChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (file) {
+      if (file && hasActiveSession) {
         onUploadPDF(file);
         e.target.value = "";
       }
     },
-    [onUploadPDF],
+    [hasActiveSession, onUploadPDF],
   );
 
   const commands = [
@@ -168,6 +173,30 @@ export default function ChatInterface({
             ))}
         </AnimatePresence>
 
+        {!hasActiveSession && (
+          <div className="flex h-full min-h-[320px] items-center justify-center px-4">
+            <div className="max-w-sm text-center">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-white/5">
+                <FileText className="h-6 w-6 text-gray-500" />
+              </div>
+              <h2 className="text-sm font-semibold text-gray-200">
+                Nenhuma analise ativa
+              </h2>
+              <p className="mt-2 text-xs leading-5 text-gray-500">
+                Crie uma analise para anexar documentos, consultar DataJud ou iniciar o pipeline.
+              </p>
+              <button
+                type="button"
+                onClick={onNewSession}
+                className="mt-4 inline-flex items-center gap-2 rounded-md bg-brand-600 px-3 py-2 text-xs font-medium text-white hover:bg-brand-700"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Nova analise
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Loading indicator */}
         {isLoading && (
           <motion.div
@@ -216,7 +245,7 @@ export default function ChatInterface({
               </div>
               <button
                 onClick={onStartPipeline}
-                disabled={!canStartPipeline || pipelineLoading}
+                disabled={!hasActiveSession || !canStartPipeline || pipelineLoading}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-brand-600 hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-white"
               >
                 <PlayCircle className="w-3.5 h-3.5" />
@@ -445,6 +474,7 @@ export default function ChatInterface({
             />
             <button
               onClick={() => fileInputRef.current?.click()}
+              disabled={!hasActiveSession}
               className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-legal-gold transition-colors"
               title="Enviar PDF"
             >
@@ -452,6 +482,7 @@ export default function ChatInterface({
             </button>
             <button
               onClick={() => setShowDataJud(!showDataJud)}
+              disabled={!hasActiveSession}
               className={`p-2 rounded-lg hover:bg-white/10 transition-colors ${
                 showDataJud ? "text-brand-400" : "text-gray-400"
               }`}
@@ -478,7 +509,8 @@ export default function ChatInterface({
             value={input}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder="Digite sua mensagem ou use * para comandos..."
+            disabled={!hasActiveSession}
+            placeholder={hasActiveSession ? "Digite sua mensagem ou use * para comandos..." : "Crie uma analise para iniciar..."}
             className="flex-1 bg-transparent text-sm text-gray-100 placeholder:text-gray-600
                        resize-none focus:outline-none py-2 max-h-40"
             rows={1}
@@ -497,7 +529,7 @@ export default function ChatInterface({
           {/* Send button */}
           <button
             onClick={handleSend}
-            disabled={!input.trim() || isLoading}
+            disabled={!hasActiveSession || !input.trim() || isLoading}
             className="p-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white
                        transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed
                        active:scale-95 mb-0.5"

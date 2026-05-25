@@ -132,6 +132,27 @@ npx playwright --version
 npx playwright install chromium
 ```
 
+Teste E2E mockado:
+
+```powershell
+cd C:\projetos\legal-analyst-squad\squads\legal-analyst\webapp\frontend
+npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+Em outro terminal:
+
+```powershell
+cd C:\projetos\legal-analyst-squad\squads\legal-analyst\webapp\frontend
+npm run test:e2e
+```
+
+Smoke test de API com backend e banco reais:
+
+```powershell
+cd C:\projetos\legal-analyst-squad\squads\legal-analyst\webapp\backend
+.\.venv\Scripts\python.exe scripts\smoke_api.py
+```
+
 Smoke test manual com Node:
 
 ```powershell

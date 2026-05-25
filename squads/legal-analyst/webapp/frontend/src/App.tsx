@@ -15,6 +15,10 @@ import type { PanelView, SessionSummary } from "./types";
 
 const LAST_SESSION_KEY = "legal-analyst:last-session-id";
 
+function isAppRoute(pathname: string) {
+  return pathname === "/app" || pathname.endsWith("/app");
+}
+
 export default function App() {
   const [activeView, setActiveView] = useState<PanelView>("chat");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -22,7 +26,7 @@ export default function App() {
   const [showVSL, setShowVSL] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("success") === "true") return false;
-    if (window.location.pathname === "/app") return false;
+    if (isAppRoute(window.location.pathname)) return false;
     return true;
   });
 
@@ -270,11 +274,13 @@ export default function App() {
         <main className="flex-1 flex flex-col overflow-hidden bg-legal-navy">
           {activeView === "chat" && (
             <ChatInterface
+              hasActiveSession={Boolean(chat.session)}
               messages={chat.messages}
               isLoading={chat.isLoading}
               error={chat.error}
               scrollRef={chat.scrollRef}
               onSendMessage={chat.sendMessage}
+              onNewSession={handleNewSession}
               onUploadPDF={handleUploadPDF}
               onIntakeDataJud={handleDataJudIntake}
               onDismissError={() => chat.setError(null)}

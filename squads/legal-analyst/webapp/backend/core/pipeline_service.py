@@ -277,10 +277,18 @@ async def mark_interrupted_runs() -> None:
         )
         runs = result.scalars().all()
         for run in runs:
-            run.status = "failed"
-            run.error_message = "Execucao interrompida por reinicio do backend; inicie uma nova analise."
-            run.completed_at = datetime.utcnow()
-            await _add_event(session, run.id, "run_failed", run.error_message)
+            if run.status == "running":
+                run.status = "queued"
+                run.error_message = "Execucao interrompida por reinicio do backend; clique em Iniciar analise para retomar."
+                run.current_phase_id = run.current_phase_id or "interrupted"
+                await _add_event(session, run.id, "run_interrupted", run.error_message)
+            elif run.status == "queued":
+                await _add_event(
+                    session,
+                    run.id,
+                    "run_recovered",
+                    "Pipeline pendente recuperado apos reinicio do backend.",
+                )
         await session.commit()
 
 
